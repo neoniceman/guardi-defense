@@ -101,6 +101,10 @@
       <button class="btn" id="startBtn">새 게임</button>
     </div>
     <div class="lifestat" id="startStats"></div>
+    <div class="hof hidden" id="startHofWrap" style="margin-top:14px">
+      <h3>🏆 최고 기록 TOP 5</h3>
+      <ol id="startHofList"></ol>
+    </div>
     <div class="legend">
       <span><i class="dot" style="background:#3ec96b"></i>콜록이</span>
       <span><i class="dot" style="background:#9b6cf0"></i>독감균(빠름)</span>
@@ -706,20 +710,22 @@ function lifeStatHTML(st){
   return '누적 플레이 <b>'+st.plays+'</b>회 · 총 처치 <b>'+st.kills.toLocaleString()
        +'</b> · 최고 웨이브 <b>'+st.bestWave+'</b>';
 }
-function renderHOF(meRank){
-  const top=getTop();
-  const el=document.getElementById('hofList');
-  if(!top.length){ el.innerHTML='<div class="empty">아직 기록이 없어요</div>'; return; }
-  el.innerHTML=top.map((e,i)=>
+function hofListHTML(top,meRank){
+  if(!top.length) return '<div class="empty">아직 기록이 없어요</div>';
+  return top.map((e,i)=>
     '<li class="'+(i===meRank?'me':'')+'"><span>WAVE '+e.wave+'</span>'
     +'<span class="sc">'+e.score.toLocaleString()+'</span>'
     +'<span class="dt">'+fmtDate(e.date)+'</span></li>').join('');
 }
+function renderHOF(meRank){ document.getElementById('hofList').innerHTML=hofListHTML(getTop(),meRank); }
 function refreshMenu(){
   const st=getStats();
   document.getElementById('startStats').innerHTML=
     st.plays>0 ? lifeStatHTML(st) : '';
   document.getElementById('continueBtn').classList.toggle('hidden', !hasSave());
+  const top=getTop();
+  document.getElementById('startHofWrap').classList.toggle('hidden', top.length===0);
+  document.getElementById('startHofList').innerHTML=hofListHTML(top,-1);
 }
 
 document.getElementById('startBtn').addEventListener('click',startGame);
