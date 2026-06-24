@@ -204,7 +204,7 @@ function rand(a,b){return a+Math.random()*(b-a);}
 function startWave(){
   G.wave++;
   G.waveActive = true;
-  const base = 5 + Math.floor(G.wave*1.6);
+  const base = 6 + Math.floor(G.wave*1.8);
   G.spawnQueue = base;
   G.spawnTimer = 0;
   G.isBossWave = (G.wave % 5 === 0);
@@ -216,15 +216,15 @@ function startWave(){
 function spawnGerm(){
   // 화면 밖 가장자리에서 등장 → 중앙으로
   const ang = Math.random()*Math.PI*2;
-  const dist = Math.max(W,H)*0.62 + 40;
+  const dist = Math.max(W,H)*0.55 + 30;
   const x = CX + Math.cos(ang)*dist;
   const y = CY + Math.sin(ang)*dist;
   let type='normal';
   const roll = Math.random();
-  if(G.wave>=2 && roll<0.28) type='fast';
-  if(G.wave>=3 && roll>0.82) type='tank';
+  if(G.wave>=1 && roll<0.24) type='fast';
+  if(G.wave>=2 && roll>0.84) type='tank';
   const t = TYPES[type];
-  const spd = t.speed * (1 + G.wave*0.035);
+  const spd = t.speed * (1.28 + G.wave*0.03);
   G.germs.push(makeGerm(x,y,type,t.hp,spd));
 }
 function spawnBoss(){
@@ -335,15 +335,15 @@ function update(dt){
       G.spawnTimer-=dt;
       if(G.spawnTimer<=0){
         spawnGerm(); G.spawnQueue--;
-        G.spawnTimer = Math.max(0.35, 1.0 - G.wave*0.03);
+        G.spawnTimer = Math.max(0.3, 0.62 - G.wave*0.02);
       }
     }
-    if(G.isBossWave && !G.bossSpawned && G.spawnQueue<=Math.floor((5+G.wave*1.6)/2)){
+    if(G.isBossWave && !G.bossSpawned && G.spawnQueue<=Math.floor((6+G.wave*1.8)/2)){
       spawnBoss(); G.bossSpawned=true;
     }
     // 웨이브 종료 판정
     if(G.spawnQueue<=0 && G.germs.length===0 && (!G.isBossWave||G.bossSpawned)){
-      G.waveActive=false; G.breakTimer=2.2; G.guardiPose=2; // 인사
+      G.waveActive=false; G.breakTimer=1.6; G.guardiPose=2; // 인사
       showFloater(CX,CY-R-30,'WAVE '+G.wave+' 클리어!','#46e08a');
       G.hp=Math.min(G.maxHp,G.hp+6); // 소량 회복 보상
       writeSave(); // 이어하기 저장
@@ -663,7 +663,7 @@ function startGame(){
   const st=getStats(); st.plays++; setStats(st); // 새 게임 1회 카운트
   Object.assign(G,{state:'play',score:0,wave:0,hp:100,kills:0,combo:0,comboTimer:0,
     germs:[],particles:[],floaters:[],shake:0,guardiHit:0,guardiPose:0,
-    waveActive:false,breakTimer:0.9,saveTimer:1.5});
+    waveActive:false,breakTimer:0.5,saveTimer:1.5});
   enterPlay();
 }
 function continueGame(){
