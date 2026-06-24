@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>가디의 방어전 — Guardi Defense</title>
+<style>
+  :root{
+    --main:#1428A0;      /* 메인 블루 */
+    --light:#5B8DEF;     /* 라이트 블루 */
+    --body:#F4E9D8;      /* 바디 크림 */
+    --ear:#C98A4B;       /* 귀 */
+    --nose:#6B4A2B;      /* 코 */
+    --bg1:#0A1140;
+    --bg2:#1428A0;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;overflow:hidden;font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+    background:radial-gradient(circle at 50% 35%, #25357f 0%, var(--bg1) 70%);user-select:none;}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
+  canvas{display:block;touch-action:none;cursor:crosshair;}
+
+  /* ===== HUD ===== */
+  #hud{position:absolute;inset:0;pointer-events:none;color:#fff;}
+  .top{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;
+    align-items:flex-start;padding:14px 18px;gap:10px;}
+  .panel{background:rgba(10,17,64,.55);backdrop-filter:blur(6px);border:1.5px solid rgba(91,141,239,.5);
+    border-radius:14px;padding:8px 14px;}
+  .label{font-size:11px;opacity:.7;letter-spacing:.5px;}
+  .val{font-size:22px;font-weight:800;line-height:1.1;}
+  .val small{font-size:13px;font-weight:600;opacity:.8;}
+  #combo{position:absolute;left:50%;top:74px;transform:translateX(-50%);font-weight:900;
+    font-size:30px;color:#FFD24A;text-shadow:0 2px 10px rgba(0,0,0,.5);opacity:0;transition:opacity .15s;}
+  /* HP bar */
+  .hpwrap{min-width:170px;}
+  .hpbar{height:14px;border-radius:8px;background:rgba(255,255,255,.15);overflow:hidden;margin-top:5px;}
+  .hpfill{height:100%;width:100%;border-radius:8px;
+    background:linear-gradient(90deg,#46e08a,#9bf0b0);transition:width .25s;}
+
+  /* ===== Screens ===== */
+  .screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;color:#fff;pointer-events:auto;padding:32px 24px;overflow-y:auto;
+    background:radial-gradient(circle at 50% 40%, rgba(20,40,160,.55), rgba(10,17,64,.92));}
+  .hidden{display:none!important;}
+  h1{font-size:clamp(30px,8vw,56px);margin:0 0 6px;font-weight:900;letter-spacing:-1px;
+    text-shadow:0 4px 0 var(--main),0 6px 18px rgba(0,0,0,.4);}
+  .subtitle{font-size:clamp(13px,3.5vw,17px);opacity:.85;margin-bottom:26px;line-height:1.6;}
+  .btn{pointer-events:auto;cursor:pointer;border:none;border-radius:16px;padding:15px 40px;
+    font-size:20px;font-weight:800;color:#fff;font-family:inherit;
+    background:linear-gradient(180deg,var(--light),var(--main));
+    box-shadow:0 6px 0 #0d1a6e,0 10px 22px rgba(0,0,0,.4);transition:transform .08s,box-shadow .08s;}
+  .btn:active{transform:translateY(4px);box-shadow:0 2px 0 #0d1a6e,0 5px 12px rgba(0,0,0,.4);}
+  .hint{margin-top:22px;font-size:13px;opacity:.7;max-width:340px;line-height:1.7;}
+  .stat{display:flex;gap:30px;margin:20px 0 6px;}
+  .stat .val{font-size:32px;}
+  .brand{position:absolute;bottom:16px;left:0;right:0;text-align:center;font-size:12px;opacity:.55;letter-spacing:.5px;}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:18px;font-size:12px;opacity:.85;}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .dot{width:12px;height:12px;border-radius:50%;display:inline-block;}
+  .best{color:#FFD24A;font-weight:800;}
+  .btn.ghost{background:rgba(255,255,255,.08);box-shadow:0 4px 0 rgba(0,0,0,.3);
+    border:1.5px solid rgba(91,141,239,.6);font-size:17px;padding:13px 30px;}
+  .btn.ghost:active{box-shadow:0 1px 0 rgba(0,0,0,.3);}
+  .btnrow{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;align-items:center;}
+  .hof{margin:18px 0 4px;width:min(340px,86vw);text-align:left;}
+  .hof h3{font-size:13px;letter-spacing:1px;opacity:.7;margin:0 0 8px;text-align:center;font-weight:700;}
+  .hof ol{list-style:none;margin:0;padding:0;counter-reset:r;}
+  .hof li{counter-increment:r;display:flex;justify-content:space-between;align-items:center;
+    font-size:14px;padding:7px 12px;border-radius:9px;background:rgba(91,141,239,.10);margin-bottom:5px;}
+  .hof li::before{content:counter(r);width:20px;height:20px;border-radius:50%;background:var(--light);
+    color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;margin-right:8px;}
+  .hof li .sc{font-weight:800;color:#FFD24A;margin-left:auto;}
+  .hof li .dt{font-size:11px;opacity:.55;margin-left:10px;}
+  .hof li.me{background:rgba(255,210,74,.18);border:1px solid rgba(255,210,74,.45);}
+  .hof .empty{text-align:center;opacity:.5;font-size:13px;padding:10px;}
+  .lifestat{display:flex;gap:18px;justify-content:center;font-size:12px;opacity:.8;margin-top:8px;flex-wrap:wrap;}
+  .lifestat b{color:#fff;font-weight:800;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div class="top">
+      <div class="panel"><div class="label">점수 SCORE</div><div class="val" id="score">0</div></div>
+      <div class="panel" style="text-align:center"><div class="label">웨이브 WAVE</div><div class="val" id="wave">1</div></div>
+      <div class="panel hpwrap"><div class="label">보장 게이지 HP</div>
+        <div class="hpbar"><div class="hpfill" id="hpfill"></div></div></div>
+    </div>
+    <div id="combo"></div>
+  </div>
+
+  <!-- 시작 화면 -->
+  <div id="start" class="screen">
+    <h1>가디의 방어전</h1>
+    <div class="subtitle">병균들이 우리 집을 노린다!<br>방패 마스코트 <b>가디</b>와 함께 막아내자 🛡️</div>
+    <div class="btnrow">
+      <button class="btn ghost hidden" id="continueBtn">이어하기</button>
+      <button class="btn" id="startBtn">새 게임</button>
+    </div>
+    <div class="lifestat" id="startStats"></div>
+    <div class="legend">
+      <span><i class="dot" style="background:#3ec96b"></i>콜록이</span>
+      <span><i class="dot" style="background:#9b6cf0"></i>독감균(빠름)</span>
+      <span><i class="dot" style="background:#f0922e"></i>뚱뚱균(탱커)</span>
+      <span><i class="dot" style="background:#e0413f"></i>변종 보스</span>
+    </div>
+    <div class="hint">병균을 <b>클릭 / 터치</b>해서 터뜨리세요.<br>가디(중앙)에 닿으면 보장 게이지가 깎입니다.<br>게이지가 0이 되면 게임 오버!</div>
+    <div class="brand">삼성화재가 당신의 일상을 지켜드립니다.</div>
+  </div>
+
+  <!-- 게임오버 -->
+  <div id="over" class="screen hidden">
+    <h1 style="font-size:clamp(26px,7vw,46px)">방어 종료!</h1>
+    <div class="subtitle" id="overMsg">가디가 끝까지 막아냈어요</div>
+    <div class="stat">
+      <div><div class="label" style="opacity:.7;font-size:12px">최종 점수</div><div class="val" id="finalScore">0</div></div>
+      <div><div class="label" style="opacity:.7;font-size:12px">도달 웨이브</div><div class="val" id="finalWave">1</div></div>
+      <div><div class="label" style="opacity:.7;font-size:12px">처치</div><div class="val" id="finalKills">0</div></div>
+    </div>
+    <div class="best" id="bestLine">최고 점수 0</div>
+    <div class="hof" id="hof">
+      <h3>🏆 명예의 전당 TOP 5</h3>
+      <ol id="hofList"></ol>
+    </div>
+    <div class="lifestat" id="overStats"></div>
+    <button class="btn" id="retryBtn" style="margin-top:20px">다시 도전</button>
+    <div class="brand">삼성화재가 당신의 일상을 지켜드립니다.</div>
+  </div>
+</div>
+
+<script>
+(()=>{
+"use strict";
+// ===== 저장소(localStorage) =====
+const DB = {
+  read(k,def){ try{ const v=localStorage.getItem(k); return v==null?def:JSON.parse(v); }catch(e){ return def; } },
+  write(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} }
+};
+const KEY={ best:'guardi_best', stats:'guardi_stats', save:'guardi_save', top:'guardi_top' };
+
+// 누적 통계: {plays, kills, bestWave, bestScore}
+function getStats(){ return DB.read(KEY.stats, {plays:0,kills:0,bestWave:0,bestScore:0}); }
+function setStats(s){ DB.write(KEY.stats,s); }
+// 명예의 전당: [{score,wave,date}] 내림차순 최대 5
+function getTop(){ return DB.read(KEY.top, []); }
+function addTop(score,wave){
+  const list=getTop();
+  const entry={score,wave,date:Date.now()};
+  list.push(entry); list.sort((a,b)=>b.score-a.score);
+  const top=list.slice(0,5);
+  DB.write(KEY.top,top);
+  return top.indexOf(entry); // 진입 순위(-1=미진입)
+}
+// 이어하기 자동저장
+function hasSave(){ return !!DB.read(KEY.save,null); }
+function writeSave(){ DB.write(KEY.save,{score:G.score,wave:G.wave,hp:G.hp,kills:G.kills}); }
+function clearSave(){ DB.del(KEY.save); }
+function fmtDate(ts){ const d=new Date(ts); return (d.getMonth()+1)+'/'+d.getDate(); }
+
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+const DPR = Math.min(window.devicePixelRatio||1, 2);
+
+// ---- 화면 영역(정사각 안전영역) ----
+let W=0,H=0,CX=0,CY=0,R=0; // R = 보호 반경
+function resize(){
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W*DPR; cv.height = H*DPR; cv.style.width=W+'px'; cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  CX = W/2; CY = H/2;
+  R = Math.max(46, Math.min(W,H)*0.085); // 가디 보호 반경
+}
+window.addEventListener('resize', resize); resize();
+
+// ---- 게임 상태 ----
+const G = {
+  state:'menu', score:0, wave:0, hp:100, maxHp:100, kills:0,
+  combo:0, comboTimer:0, best: +DB.read(KEY.best,0),
+  germs:[], particles:[], floaters:[], saveTimer:0,
+  spawnQueue:0, spawnTimer:0, waveActive:false, breakTimer:0,
+  shake:0, guardiHit:0, guardiPose:0, // 0 idle,1 shield,2 greet
+  t:0
+};
+
+// ---- 적 타입 ----
+const TYPES = {
+  normal:{ name:'콜록이', color:'#3ec96b', dark:'#2a9c50', r:24, hp:1, speed:42, score:10, spikes:8 },
+  fast  :{ name:'독감균', color:'#9b6cf0', dark:'#6f43c4', r:19, hp:1, speed:78, score:16, spikes:6 },
+  tank  :{ name:'뚱뚱균', color:'#f0922e', dark:'#c46d12', r:34, hp:3, speed:26, score:30, spikes:11 },
+  boss  :{ name:'변종 보스', color:'#e0413f', dark:'#a82321', r:52, hp:14, speed:20, score:200, spikes:14 }
+};
+
+function rand(a,b){return a+Math.random()*(b-a);}
+
+// ---- 웨이브 시작 ----
+function startWave(){
+  G.wave++;
+  G.waveActive = true;
+  const base = 5 + Math.floor(G.wave*1.6);
+  G.spawnQueue = base;
+  G.spawnTimer = 0;
+  G.isBossWave = (G.wave % 5 === 0);
+  G.bossSpawned = false;
+  G.guardiPose = 1; // 방패 자세
+  showFloater(CX, CY - R - 30, 'WAVE '+G.wave, '#5B8DEF');
+}
+
+function spawnGerm(){
+  // 화면 밖 가장자리에서 등장 → 중앙으로
+  const ang = Math.random()*Math.PI*2;
+  const dist = Math.max(W,H)*0.62 + 40;
+  const x = CX + Math.cos(ang)*dist;
+  const y = CY + Math.sin(ang)*dist;
+  let type='normal';
+  const roll = Math.random();
+  if(G.wave>=2 && roll<0.28) type='fast';
+  if(G.wave>=3 && roll>0.82) type='tank';
+  const t = TYPES[type];
+  const spd = t.speed * (1 + G.wave*0.035);
+  G.germs.push(makeGerm(x,y,type,t.hp,spd));
+}
+function spawnBoss(){
+  const ang = Math.random()*Math.PI*2;
+  const dist = Math.max(W,H)*0.62 + 60;
+  const t = TYPES.boss;
+  const hp = t.hp + Math.floor(G.wave/5)*6;
+  G.germs.push(makeGerm(CX+Math.cos(ang)*dist, CY+Math.sin(ang)*dist,'boss',hp, t.speed*(1+G.wave*0.02)));
+  showFloater(CX, CY - R - 30, '⚠ 변종 보스 출현!', '#e0413f');
+  G.shake = 10;
+}
+function makeGerm(x,y,type,hp,speed){
+  const t = TYPES[type];
+  return { x,y,type, r:t.r, hp, maxHp:hp, speed, seed:Math.random()*99,
+    wob:rand(0.7,1.3), dead:false };
+}
+
+// ---- 입력(클릭/터치) ----
+function hitAt(px,py){
+  // 가장 가까운(위에 있는) 병균 우선
+  for(let i=G.germs.length-1;i>=0;i--){
+    const g=G.germs[i];
+    const dx=px-g.x, dy=py-g.y;
+    const rr = g.r + 6;
+    if(dx*dx+dy*dy <= rr*rr){
+      damageGerm(g,1,px,py);
+      return true;
+    }
+  }
+  return false;
+}
+function damageGerm(g,dmg,px,py){
+  g.hp -= dmg;
+  g.hitFlash = 1;
+  burst(px||g.x, py||g.y, TYPES[g.type].color, g.type==='tank'||g.type==='boss'?6:10);
+  if(g.hp<=0){
+    g.dead=true;
+    kill(g);
+  } else {
+    // 탱커 맞을 때 살짝 뒤로
+    spark(g.x,g.y,'#fff',4);
+  }
+}
+function kill(g){
+  const t=TYPES[g.type];
+  G.combo++; G.comboTimer=1.6;
+  const mult = 1 + Math.min(G.combo-1,9)*0.1;
+  const pts = Math.round(t.score*mult);
+  G.score += pts; G.kills++;
+  burst(g.x,g.y,t.color, g.type==='boss'?40:18);
+  burst(g.x,g.y,'#fff', 8);
+  showFloater(g.x,g.y,'+'+pts, '#FFD24A');
+  if(G.combo>=3){
+    const c=document.getElementById('combo');
+    c.textContent = G.combo+' COMBO!';
+    c.style.opacity=1; clearTimeout(G._ct);
+    G._ct=setTimeout(()=>c.style.opacity=0,700);
+  }
+  if(g.type==='boss'){ G.shake=14; showFloater(CX,CY-R-30,'보스 격파! 🎉','#FFD24A'); }
+}
+
+function pointerDown(e){
+  if(G.state!=='play') return;
+  e.preventDefault();
+  const rect=cv.getBoundingClientRect();
+  const pts = e.changedTouches ? e.changedTouches : [e];
+  for(const p of pts){
+    const x=p.clientX-rect.left, y=p.clientY-rect.top;
+    hitAt(x,y);
+    ripple(x,y);
+  }
+}
+cv.addEventListener('mousedown', pointerDown);
+cv.addEventListener('touchstart', pointerDown, {passive:false});
+
+// ---- 이펙트 ----
+function burst(x,y,color,n){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, s=rand(40,220);
+    G.particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+      life:rand(.3,.7),max:.7,color,r:rand(2,5)});
+  }
+}
+function spark(x,y,color,n){ burst(x,y,color,n); }
+function ripple(x,y){ G.particles.push({ring:true,x,y,r:6,vr:260,life:.35,max:.35,color:'#5B8DEF'}); }
+function showFloater(x,y,text,color){ G.floaters.push({x,y,text,color,life:1,max:1,vy:-34}); }
+
+// ---- 업데이트 ----
+let last=performance.now();
+function loop(now){
+  const dt=Math.min((now-last)/1000,0.05); last=now; G.t+=dt;
+  if(G.state==='play') update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+function update(dt){
+  // 콤보 타이머
+  if(G.comboTimer>0){ G.comboTimer-=dt; if(G.comboTimer<=0) G.combo=0; }
+  // 자동저장(이어하기)
+  G.saveTimer-=dt; if(G.saveTimer<=0){ G.saveTimer=1.5; if(G.hp>0) writeSave(); }
+  if(G.shake>0) G.shake=Math.max(0,G.shake-dt*28);
+  if(G.guardiHit>0) G.guardiHit-=dt;
+
+  // ---- 스폰 ----
+  if(G.waveActive){
+    if(G.spawnQueue>0){
+      G.spawnTimer-=dt;
+      if(G.spawnTimer<=0){
+        spawnGerm(); G.spawnQueue--;
+        G.spawnTimer = Math.max(0.35, 1.0 - G.wave*0.03);
+      }
+    }
+    if(G.isBossWave && !G.bossSpawned && G.spawnQueue<=Math.floor((5+G.wave*1.6)/2)){
+      spawnBoss(); G.bossSpawned=true;
+    }
+    // 웨이브 종료 판정
+    if(G.spawnQueue<=0 && G.germs.length===0 && (!G.isBossWave||G.bossSpawned)){
+      G.waveActive=false; G.breakTimer=2.2; G.guardiPose=2; // 인사
+      showFloater(CX,CY-R-30,'WAVE '+G.wave+' 클리어!','#46e08a');
+      G.hp=Math.min(G.maxHp,G.hp+6); // 소량 회복 보상
+      writeSave(); // 이어하기 저장
+    }
+  } else {
+    G.breakTimer-=dt;
+    if(G.breakTimer<=0) startWave();
+  }
+
+  // ---- 병균 이동 ----
+  for(const g of G.germs){
+    const dx=CX-g.x, dy=CY-g.y;
+    const d=Math.hypot(dx,dy)||1;
+    g.x += dx/d*g.speed*dt;
+    g.y += dy/d*g.speed*dt;
+    if(g.hitFlash>0) g.hitFlash-=dt*4;
+    // 보호 반경 도달 → 집(가디) 피해
+    if(d < R + g.r*0.5){
+      const dmg = g.type==='boss'?34 : g.type==='tank'?18 : g.type==='fast'?9 : 12;
+      G.hp -= dmg; g.dead=true;
+      G.shake=Math.min(16, g.r*0.4); G.guardiHit=0.4; G.guardiPose=1;
+      G.combo=0;
+      burst(g.x,g.y,TYPES[g.type].color,14);
+      showFloater(g.x,g.y,'-'+dmg,'#ff6b6b');
+      if(G.hp<=0){ G.hp=0; gameOver(); }
+    }
+  }
+  G.germs = G.germs.filter(g=>!g.dead);
+
+  // ---- 파티클 ----
+  for(const p of G.particles){
+    p.life-=dt;
+    if(p.ring){ p.r += p.vr*dt; }
+    else { p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.92; p.vy*=0.92; p.vy+=140*dt; }
+  }
+  G.particles=G.particles.filter(p=>p.life>0);
+  for(const f of G.floaters){ f.life-=dt; f.y+=f.vy*dt; }
+  G.floaters=G.floaters.filter(f=>f.life>0);
+
+  // HUD
+  document.getElementById('score').textContent = G.score.toLocaleString();
+  document.getElementById('wave').textContent = G.wave;
+  document.getElementById('hpfill').style.width = (G.hp/G.maxHp*100)+'%';
+  const f=document.getElementById('hpfill');
+  f.style.background = G.hp>50?'linear-gradient(90deg,#46e08a,#9bf0b0)'
+    : G.hp>25?'linear-gradient(90deg,#f0b429,#ffd766)':'linear-gradient(90deg,#e0413f,#ff7a78)';
+}
+
+// ---- 렌더 ----
+function render(){
+  ctx.clearRect(0,0,W,H);
+  ctx.save();
+  if(G.shake>0){ ctx.translate(rand(-G.shake,G.shake),rand(-G.shake,G.shake)); }
+
+  drawBackground();
+  if(G.state==='play'){
+    drawBase();         // 보호 영역
+    for(const g of G.germs) drawGerm(g);
+    drawGuardi(CX,CY,R*0.92);
+  }
+  drawParticles();
+  drawFloaters();
+  ctx.restore();
+}
+
+function drawBackground(){
+  // 부드러운 점 그리드
+  ctx.save();
+  ctx.globalAlpha=0.10; ctx.fillStyle='#5B8DEF';
+  const gap=46;
+  for(let x=(CX%gap);x<W;x+=gap)for(let y=(CY%gap);y<H;y+=gap){
+    ctx.beginPath();ctx.arc(x,y,1.6,0,7);ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawBase(){
+  const pulse = 1 + Math.sin(G.t*2)*0.02;
+  // 보호 링
+  ctx.save();
+  ctx.translate(CX,CY);
+  // 위험 글로우(피격 시)
+  if(G.guardiHit>0){
+    ctx.beginPath();ctx.arc(0,0,R*1.25,0,7);
+    ctx.fillStyle='rgba(224,65,63,'+(G.guardiHit*0.4)+')';ctx.fill();
+  }
+  ctx.beginPath();ctx.arc(0,0,R*pulse,0,7);
+  ctx.strokeStyle='rgba(91,141,239,.55)';ctx.lineWidth=3;
+  ctx.setLineDash([10,9]);ctx.lineDashOffset=-G.t*18;ctx.stroke();
+  ctx.setLineDash([]);
+  // 바닥 그림자/플레이트
+  ctx.beginPath();ctx.arc(0,0,R*0.96,0,7);
+  ctx.fillStyle='rgba(20,40,160,.18)';ctx.fill();
+  ctx.restore();
+}
+
+// ---- 가디(브랜드 마스코트) 캔버스 렌더 — 방패를 앞으로 든 방어 자세 ----
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();ctx.fill();
+}
+function drawGuardi(cx,cy,s){
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.translate(0, Math.sin(G.t*2)*2);            // 둥둥
+  if(G.guardiHit>0) ctx.translate(rand(-2.5,2.5),0); // 피격 흔들림
+
+  const HY = -s*0.6, HR = s*0.66;  // 머리 중심 y / 반지름(작게)
+
+  // 그림자
+  ctx.beginPath();ctx.ellipse(0,s*1.12,s*0.62,s*0.14,0,0,7);
+  ctx.fillStyle='rgba(10,17,64,.35)';ctx.fill();
+
+  // 발
+  ctx.fillStyle='#6B4A2B';
+  ctx.beginPath();ctx.ellipse(-s*0.26,s*1.0,s*0.17,s*0.11,0,0,7);ctx.fill();
+  ctx.beginPath();ctx.ellipse( s*0.26,s*1.0,s*0.17,s*0.11,0,0,7);ctx.fill();
+
+  // 몸통(블루) — 어깨가 방패 위로 살짝 보임
+  ctx.beginPath();
+  ctx.moveTo(-s*0.5,-s*0.04);
+  ctx.quadraticCurveTo(-s*0.6,s*0.7,-s*0.32,s*0.98);
+  ctx.quadraticCurveTo(0,s*1.12,s*0.32,s*0.98);
+  ctx.quadraticCurveTo(s*0.6,s*0.7,s*0.5,-s*0.04);
+  ctx.quadraticCurveTo(0,-s*0.28,-s*0.5,-s*0.04);
+  ctx.closePath();
+  ctx.fillStyle='#1428A0';ctx.fill();
+
+  // 귀 (머리 뒤 양옆, 갈색 처진 귀)
+  ctx.fillStyle='#C98A4B';
+  ctx.save();ctx.translate(-s*0.58,HY+s*0.16);ctx.rotate(-0.22);
+  ctx.beginPath();ctx.ellipse(0,0,s*0.19,s*0.4,0,0,7);ctx.fill();ctx.restore();
+  ctx.save();ctx.translate( s*0.58,HY+s*0.16);ctx.rotate(0.22);
+  ctx.beginPath();ctx.ellipse(0,0,s*0.19,s*0.4,0,0,7);ctx.fill();ctx.restore();
+
+  // ===== 방패 (앞으로 들고 보호) — 캐릭터의 주역 =====
+  const pop = G.guardiHit>0?1.07 : (G.guardiPose===1?1.05:1);
+  ctx.save();
+  ctx.translate(0,s*0.4);ctx.scale(pop,pop);
+  // 피격 시 보호 글로우
+  if(G.guardiHit>0){ctx.beginPath();ctx.arc(0,0,s*0.92,0,7);
+    ctx.fillStyle='rgba(91,141,239,'+(G.guardiHit*0.5)+')';ctx.fill();}
+  // 방패 외형(히터 실드)
+  ctx.beginPath();
+  ctx.moveTo(-s*0.62,-s*0.52);
+  ctx.lineTo(s*0.62,-s*0.52);
+  ctx.lineTo(s*0.62,-s*0.05);
+  ctx.quadraticCurveTo(s*0.62,s*0.42,0,s*0.64);
+  ctx.quadraticCurveTo(-s*0.62,s*0.42,-s*0.62,-s*0.05);
+  ctx.closePath();
+  ctx.fillStyle='#5B8DEF';ctx.fill();
+  ctx.lineWidth=s*0.1;ctx.strokeStyle='#1428A0';ctx.lineJoin='round';ctx.stroke();
+  // 안쪽 흰 테두리
+  ctx.beginPath();
+  ctx.moveTo(-s*0.46,-s*0.38);
+  ctx.lineTo(s*0.46,-s*0.38);
+  ctx.lineTo(s*0.46,-s*0.05);
+  ctx.quadraticCurveTo(s*0.46,s*0.32,0,s*0.5);
+  ctx.quadraticCurveTo(-s*0.46,s*0.32,-s*0.46,-s*0.05);
+  ctx.closePath();
+  ctx.lineWidth=s*0.035;ctx.strokeStyle='rgba(255,255,255,.55)';ctx.stroke();
+  // 십자 엠블럼(크림)
+  ctx.fillStyle='#F4E9D8';
+  const cw=s*0.13;
+  rr(-cw/2,-s*0.3,cw,s*0.5,cw/2);          // 세로
+  rr(-s*0.24,-s*0.11,s*0.48,cw,cw/2);      // 가로
+  // 광택
+  ctx.beginPath();
+  ctx.moveTo(-s*0.46,-s*0.4);ctx.lineTo(-s*0.2,-s*0.4);
+  ctx.lineTo(-s*0.36,s*0.18);ctx.lineTo(-s*0.55,-s*0.04);ctx.closePath();
+  ctx.fillStyle='rgba(255,255,255,.16)';ctx.fill();
+  ctx.restore();
+
+  // 앞발 (방패 양쪽을 움켜쥠)
+  ctx.fillStyle='#C98A4B';
+  ctx.save();ctx.translate(-s*0.6,s*0.34);ctx.rotate(0.3);
+  ctx.beginPath();ctx.ellipse(0,0,s*0.15,s*0.11,0,0,7);ctx.fill();ctx.restore();
+  ctx.save();ctx.translate( s*0.6,s*0.34);ctx.rotate(-0.3);
+  ctx.beginPath();ctx.ellipse(0,0,s*0.15,s*0.11,0,0,7);ctx.fill();ctx.restore();
+
+  // ===== 머리 (작게, 방패 위로) =====
+  ctx.beginPath();ctx.arc(0,HY,HR,0,7);
+  ctx.fillStyle='#F4E9D8';ctx.fill();
+  // 볼터치
+  ctx.globalAlpha=.55;ctx.fillStyle='#F2B6B0';
+  ctx.beginPath();ctx.arc(-HR*0.62,HY+HR*0.28,HR*0.2,0,7);ctx.fill();
+  ctx.beginPath();ctx.arc( HR*0.62,HY+HR*0.28,HR*0.2,0,7);ctx.fill();
+  ctx.globalAlpha=1;
+  // 주둥이
+  ctx.beginPath();ctx.ellipse(0,HY+HR*0.34,HR*0.52,HR*0.4,0,0,7);
+  ctx.fillStyle='#fff';ctx.fill();
+  // 눈
+  const greet=G.guardiPose===2;
+  const ex=HR*0.38, ey=HY-HR*0.02;
+  ctx.fillStyle='#2A2A2A';ctx.strokeStyle='#2A2A2A';ctx.lineWidth=HR*0.075;ctx.lineCap='round';
+  if(greet){ // 웃는 눈
+    ctx.beginPath();ctx.moveTo(-ex-HR*0.13,ey);ctx.quadraticCurveTo(-ex,ey-HR*0.18,-ex+HR*0.13,ey);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(ex-HR*0.13,ey);ctx.quadraticCurveTo(ex,ey-HR*0.18,ex+HR*0.13,ey);ctx.stroke();
+  } else {
+    ctx.beginPath();ctx.arc(-ex,ey,HR*0.14,0,7);ctx.fill();
+    ctx.beginPath();ctx.arc( ex,ey,HR*0.14,0,7);ctx.fill();
+    ctx.fillStyle='#fff';
+    ctx.beginPath();ctx.arc(-ex+HR*0.05,ey-HR*0.05,HR*0.05,0,7);ctx.fill();
+    ctx.beginPath();ctx.arc( ex+HR*0.05,ey-HR*0.05,HR*0.05,0,7);ctx.fill();
+    // 단호한 눈썹
+    ctx.strokeStyle='#6B4A2B';ctx.lineWidth=HR*0.07;
+    ctx.beginPath();ctx.moveTo(-ex-HR*0.18,ey-HR*0.3);ctx.lineTo(-ex+HR*0.1,ey-HR*0.18);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(ex+HR*0.18,ey-HR*0.3);ctx.lineTo(ex-HR*0.1,ey-HR*0.18);ctx.stroke();
+  }
+  // 코
+  ctx.fillStyle='#6B4A2B';
+  ctx.beginPath();ctx.ellipse(0,HY+HR*0.2,HR*0.16,HR*0.13,0,0,7);ctx.fill();
+  // 입
+  ctx.strokeStyle='#6B4A2B';ctx.lineWidth=HR*0.055;
+  ctx.beginPath();ctx.moveTo(-HR*0.16,HY+HR*0.38);ctx.quadraticCurveTo(0,HY+HR*0.48,HR*0.16,HY+HR*0.38);ctx.stroke();
+
+  ctx.restore();
+}
+
+// ---- 병균 ----
+function drawGerm(g){
+  const t=TYPES[g.type];
+  ctx.save();
+  ctx.translate(g.x,g.y);
+  const wob = 1 + Math.sin(G.t*5*g.wob + g.seed)*0.06;
+  ctx.scale(wob, 2-wob);
+  const rr = g.r;
+
+  // 스파이크 외곽
+  ctx.beginPath();
+  const N=t.spikes;
+  for(let i=0;i<=N*2;i++){
+    const a=(i/(N*2))*Math.PI*2;
+    const rad = (i%2===0)? rr : rr*0.78;
+    const px=Math.cos(a)*rad, py=Math.sin(a)*rad;
+    i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = g.hitFlash>0? '#fff' : t.color;
+  ctx.fill();
+  ctx.lineWidth=2;ctx.strokeStyle=t.dark;ctx.stroke();
+
+  // 몸통 원
+  ctx.beginPath();ctx.arc(0,0,rr*0.7,0,7);
+  ctx.fillStyle = g.hitFlash>0? '#ffd9d9' : t.dark;ctx.globalAlpha=.35;ctx.fill();ctx.globalAlpha=1;
+
+  // 얼룩
+  ctx.fillStyle=t.dark;ctx.globalAlpha=.5;
+  ctx.beginPath();ctx.arc(-rr*0.25,rr*0.2,rr*0.16,0,7);ctx.fill();
+  ctx.beginPath();ctx.arc(rr*0.3,-rr*0.1,rr*0.12,0,7);ctx.fill();
+  ctx.globalAlpha=1;
+
+  // 눈 (째려보는)
+  const eo = rr*0.26;
+  ctx.fillStyle='#fff';
+  ctx.beginPath();ctx.arc(-eo,-rr*0.1,rr*0.2,0,7);ctx.fill();
+  ctx.beginPath();ctx.arc( eo,-rr*0.1,rr*0.2,0,7);ctx.fill();
+  ctx.fillStyle='#1a1a1a';
+  const look=Math.atan2(CY-g.y,CX-g.x);
+  const lx=Math.cos(look)*rr*0.07, ly=Math.sin(look)*rr*0.07;
+  ctx.beginPath();ctx.arc(-eo+lx,-rr*0.1+ly,rr*0.1,0,7);ctx.fill();
+  ctx.beginPath();ctx.arc( eo+lx,-rr*0.1+ly,rr*0.1,0,7);ctx.fill();
+  // 찡그린 눈썹
+  ctx.strokeStyle='#1a1a1a';ctx.lineWidth=rr*0.06;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(-eo-rr*0.18,-rr*0.32);ctx.lineTo(-eo+rr*0.05,-rr*0.22);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(eo+rr*0.18,-rr*0.32);ctx.lineTo(eo-rr*0.05,-rr*0.22);ctx.stroke();
+  // 입
+  ctx.beginPath();ctx.moveTo(-rr*0.18,rr*0.32);ctx.quadraticCurveTo(0,rr*0.18,rr*0.18,rr*0.32);ctx.stroke();
+
+  // 탱커/보스 체력바
+  if(g.maxHp>1){
+    const bw=rr*1.6, bh=5;
+    ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(-bw/2,-rr-12,bw,bh);
+    ctx.fillStyle='#46e08a';ctx.fillRect(-bw/2,-rr-12,bw*(g.hp/g.maxHp),bh);
+  }
+  ctx.restore();
+}
+
+function drawParticles(){
+  for(const p of G.particles){
+    const a=Math.max(0,p.life/p.max);
+    if(p.ring){
+      ctx.globalAlpha=a*0.6;ctx.strokeStyle=p.color;ctx.lineWidth=3;
+      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.stroke();
+    } else {
+      ctx.globalAlpha=a;ctx.fillStyle=p.color;
+      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.fill();
+    }
+  }
+  ctx.globalAlpha=1;
+}
+function drawFloaters(){
+  ctx.textAlign='center';ctx.font='800 20px sans-serif';
+  for(const f of G.floaters){
+    const a=Math.max(0,f.life/f.max);
+    ctx.globalAlpha=a;
+    ctx.lineWidth=4;ctx.strokeStyle='rgba(10,17,64,.6)';
+    ctx.strokeText(f.text,f.x,f.y);
+    ctx.fillStyle=f.color;ctx.fillText(f.text,f.x,f.y);
+  }
+  ctx.globalAlpha=1;
+}
+
+// ---- 흐름 제어 ----
+function enterPlay(){
+  document.getElementById('start').classList.add('hidden');
+  document.getElementById('over').classList.add('hidden');
+  document.getElementById('hud').classList.remove('hidden');
+}
+function startGame(){
+  clearSave();
+  const st=getStats(); st.plays++; setStats(st); // 새 게임 1회 카운트
+  Object.assign(G,{state:'play',score:0,wave:0,hp:100,kills:0,combo:0,comboTimer:0,
+    germs:[],particles:[],floaters:[],shake:0,guardiHit:0,guardiPose:0,
+    waveActive:false,breakTimer:0.9,saveTimer:1.5});
+  enterPlay();
+}
+function continueGame(){
+  const s=DB.read(KEY.save,null);
+  if(!s) return startGame();
+  Object.assign(G,{state:'play',score:s.score,wave:Math.max(0,s.wave-1),hp:s.hp,kills:s.kills,
+    combo:0,comboTimer:0,germs:[],particles:[],floaters:[],shake:0,guardiHit:0,
+    guardiPose:0,waveActive:false,breakTimer:0.7,saveTimer:1.5});
+  enterPlay();
+  showFloater(CX,CY-R-30,'이어서 시작! WAVE '+s.wave,'#5B8DEF');
+}
+function gameOver(){
+  G.state='over';
+  G.germs=[];
+  clearSave(); // 게임 종료 → 이어하기 삭제
+  // 최고점
+  if(G.score>G.best){ G.best=G.score; DB.write(KEY.best,G.best); }
+  // 누적 통계
+  const st=getStats();
+  st.kills+=G.kills;
+  st.bestWave=Math.max(st.bestWave,G.wave);
+  st.bestScore=Math.max(st.bestScore,G.score);
+  setStats(st);
+  // 명예의 전당
+  const rank=addTop(G.score,G.wave);
+  renderHOF(rank);
+  // 결과 표시
+  document.getElementById('finalScore').textContent=G.score.toLocaleString();
+  document.getElementById('finalWave').textContent=G.wave;
+  document.getElementById('finalKills').textContent=G.kills;
+  document.getElementById('bestLine').textContent= rank===0
+    ? '🎉 신기록 달성! '+G.best.toLocaleString()
+    : '🏆 최고 점수 '+G.best.toLocaleString();
+  document.getElementById('overStats').innerHTML=lifeStatHTML(st);
+  const msg = G.wave>=10?'완벽한 방어! 가디도 감탄했어요 🛡️':
+              G.wave>=5 ?'훌륭해요! 병균들이 혼쭐났네요':
+                         '아쉽지만 가디가 다시 일어섭니다!';
+  document.getElementById('overMsg').textContent=msg;
+  document.getElementById('hud').classList.add('hidden');
+  document.getElementById('over').classList.remove('hidden');
+}
+
+function lifeStatHTML(st){
+  return '누적 플레이 <b>'+st.plays+'</b>회 · 총 처치 <b>'+st.kills.toLocaleString()
+       +'</b> · 최고 웨이브 <b>'+st.bestWave+'</b>';
+}
+function renderHOF(meRank){
+  const top=getTop();
+  const el=document.getElementById('hofList');
+  if(!top.length){ el.innerHTML='<div class="empty">아직 기록이 없어요</div>'; return; }
+  el.innerHTML=top.map((e,i)=>
+    '<li class="'+(i===meRank?'me':'')+'"><span>WAVE '+e.wave+'</span>'
+    +'<span class="sc">'+e.score.toLocaleString()+'</span>'
+    +'<span class="dt">'+fmtDate(e.date)+'</span></li>').join('');
+}
+function refreshMenu(){
+  const st=getStats();
+  document.getElementById('startStats').innerHTML=
+    st.plays>0 ? lifeStatHTML(st) : '';
+  document.getElementById('continueBtn').classList.toggle('hidden', !hasSave());
+}
+
+document.getElementById('startBtn').addEventListener('click',startGame);
+document.getElementById('retryBtn').addEventListener('click',startGame);
+document.getElementById('continueBtn').addEventListener('click',continueGame);
+// 탭 닫기/전환 시 안전 저장
+window.addEventListener('beforeunload',()=>{ if(G.state==='play'&&G.hp>0) writeSave(); });
+document.addEventListener('visibilitychange',()=>{ if(document.hidden&&G.state==='play'&&G.hp>0) writeSave(); });
+
+refreshMenu();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

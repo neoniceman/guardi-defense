@@ -1,0 +1,7 @@
+# 빌드(index.html)만 공개 — 원본·내부 자료는 업로드하지 않음
+guardi-defense.html
+guardi_mascot.svg
+docs/
+.claude/
+.DS_Store
+*.log
