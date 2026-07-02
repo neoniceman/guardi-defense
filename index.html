@@ -82,6 +82,9 @@
   #fever{position:absolute;left:50%;top:112px;transform:translateX(-50%);font-weight:900;
     font-size:24px;color:#FFD24A;text-shadow:0 0 16px rgba(255,210,74,.9),0 2px 8px rgba(0,0,0,.5);
     opacity:0;transition:opacity .2s;white-space:nowrap;}
+  #gradeStamp{display:inline-block;margin:4px 0 2px;padding:2px 26px;border:3.5px solid;border-radius:14px;
+    font-size:46px;font-weight:900;transform:rotate(-6deg);letter-spacing:2px;
+    text-shadow:0 2px 10px rgba(0,0,0,.35);}
 </style>
 </head>
 <body>
@@ -119,7 +122,11 @@
       <span><i class="dot" style="background:#9b6cf0"></i>독감균(빠름)</span>
       <span><i class="dot" style="background:#f0922e"></i>뚱뚱균(탱커)</span>
       <span><i class="dot" style="background:#e0413f"></i>변종 보스</span>
+      <span><i class="dot" style="background:#2bd4c9"></i>분열균</span>
       <span><i class="dot" style="background:#FFD24A"></i>황금(피버!)</span>
+    </div>
+    <div class="legend" style="margin-top:8px;opacity:.75">
+      <span>💣 폭탄</span><span>❄️ 빙결</span><span>💊 회복 — 떨어지면 탭해서 줍기!</span>
     </div>
     <div class="hint">병균을 <b>클릭 / 터치</b>해서 터뜨리세요.<br>가디(중앙)에 닿으면 보장 게이지가 깎입니다.<br>게이지가 0이 되면 게임 오버!</div>
     <div class="brand">삼성화재가 당신의 일상을 지켜드립니다.</div>
@@ -128,6 +135,7 @@
   <!-- 게임오버 -->
   <div id="over" class="screen hidden">
     <h1 style="font-size:clamp(26px,7vw,46px)">방어 종료!</h1>
+    <div id="gradeStamp">C</div>
     <div class="subtitle" id="overMsg">가디가 끝까지 막아냈어요</div>
     <div class="stat">
       <div><div class="label" style="opacity:.7;font-size:12px">최종 점수</div><div class="val" id="finalScore">0</div></div>
@@ -140,7 +148,10 @@
       <ol id="hofList"></ol>
     </div>
     <div class="lifestat" id="overStats"></div>
-    <button class="btn" id="retryBtn" style="margin-top:20px">다시 도전</button>
+    <div class="btnrow" style="margin-top:20px">
+      <button class="btn ghost" id="shareBtn">📣 점수 자랑</button>
+      <button class="btn" id="retryBtn">다시 도전</button>
+    </div>
     <div class="brand">삼성화재가 당신의 일상을 지켜드립니다.</div>
   </div>
 </div>
@@ -213,7 +224,13 @@ const SFX = {
   gold(){ this.tone(900,1400,.1,'triangle',.14); this.tone(1200,1800,.12,'triangle',.14,.08); },
   fever(){ [440,554,659,880].forEach((f,i)=>this.tone(f,f,.12,'square',.14,i*.07)); },
   heartbeat(){ this.tone(70,45,.14,'sine',.45); this.tone(62,40,.12,'sine',.35,.18); },
-  over(){ this.tone(420,110,.7,'sawtooth',.16); }
+  over(){ this.tone(420,110,.7,'sawtooth',.16); },
+  item(){ this.tone(700,1000,.09,'triangle',.12); },
+  bomb(){ this.noise(.35,.24); this.tone(120,40,.4,'sawtooth',.24); },
+  freezeS(){ this.tone(1200,480,.26,'sine',.14); },
+  heal(){ this.tone(500,900,.18,'triangle',.14); },
+  summon(){ this.tone(260,180,.14,'square',.12); },
+  enrage(){ this.tone(140,320,.3,'sawtooth',.2); }
 };
 function buzz(p){ try{ if(navigator.vibrate) navigator.vibrate(p); }catch(e){} }
 
@@ -240,6 +257,7 @@ const G = {
   spawnQueue:0, spawnTimer:0, waveActive:false, breakTimer:0,
   shake:0, guardiHit:0, guardiPose:0, // 0 idle,1 shield,2 greet
   fever:0, heartbeat:0, lowWarned:false,
+  items:[], freeze:0,
   t:0
 };
 
@@ -249,7 +267,9 @@ const TYPES = {
   fast  :{ name:'독감균', color:'#9b6cf0', dark:'#6f43c4', r:19, hp:1, speed:78, score:16, spikes:6 },
   tank  :{ name:'뚱뚱균', color:'#f0922e', dark:'#c46d12', r:34, hp:3, speed:26, score:30, spikes:11 },
   boss  :{ name:'변종 보스', color:'#e0413f', dark:'#a82321', r:52, hp:14, speed:20, score:200, spikes:14 },
-  gold  :{ name:'황금 콜록이', color:'#FFD24A', dark:'#D4A017', r:21, hp:1, speed:88, score:50, spikes:9 }
+  gold  :{ name:'황금 콜록이', color:'#FFD24A', dark:'#D4A017', r:21, hp:1, speed:88, score:50, spikes:9 },
+  split :{ name:'분열균', color:'#2bd4c9', dark:'#149e93', r:27, hp:1, speed:36, score:20, spikes:7 },
+  mini  :{ name:'꼬마균', color:'#8fe3dc', dark:'#2bd4c9', r:13, hp:1, speed:72, score:8, spikes:6 }
 };
 
 function rand(a,b){return a+Math.random()*(b-a);}
@@ -277,6 +297,7 @@ function spawnGerm(){
   const roll = Math.random();
   if(G.wave>=1 && roll<0.24) type='fast';
   if(G.wave>=2 && roll>0.84) type='tank';
+  if(G.wave>=3 && roll>=0.24 && roll<0.34) type='split'; // 분열균
   if(Math.random()<0.06) type='gold'; // 가끔 황금 병균 — 잡으면 피버!
   const t = TYPES[type];
   const spd = t.speed * (1.28 + G.wave*0.03);
@@ -296,7 +317,8 @@ function spawnBoss(){
 function makeGerm(x,y,type,hp,speed){
   const t = TYPES[type];
   return { x,y,type, r:t.r, hp, maxHp:hp, speed, seed:Math.random()*99,
-    wob:rand(0.7,1.3), dead:false, ttl: type==='gold'?5:0 };
+    wob:rand(0.7,1.3), dead:false, ttl: type==='gold'?5:0,
+    summonT: type==='boss'?3.2:0, enraged:false };
 }
 
 // ---- 입력(클릭/터치) ----
@@ -354,6 +376,41 @@ function kill(g){
     burst(g.x,g.y,'#FFD24A',30);
   }
   if(g.type==='boss'){ G.shake=14; showFloater(CX,CY-R-30,'보스 격파! 🎉','#FFD24A'); }
+  if(g.type==='split'){ // 분열!
+    for(const s of [-1,1]){
+      G.germs.push(makeGerm(g.x+s*26, g.y+rand(-12,12), 'mini', 1, TYPES.mini.speed*(1.28+G.wave*0.03)));
+    }
+    showFloater(g.x,g.y-22,'분열!','#2bd4c9');
+  }
+  // 아이템 드랍 (황금/보스 제외, 화면에 최대 2개)
+  if(g.type!=='boss' && g.type!=='gold' && G.items.length<2 && Math.random()<0.08) dropItem(g.x,g.y);
+}
+
+// ---- 아이템 ----
+function dropItem(x,y){
+  const kinds=['bomb','freeze','heal'];
+  G.items.push({ x, y, kind:kinds[Math.floor(Math.random()*3)], ttl:6 });
+  SFX.item();
+}
+function applyItem(it){
+  if(it.kind==='bomb'){ // 💣 화면 전체 폭발
+    SFX.bomb(); buzz([50,30,90]); G.shake=14;
+    burst(it.x,it.y,'#FFD24A',34);
+    const targets=[...G.germs];
+    for(const g of targets){
+      if(g.dead) continue;
+      if(g.type==='boss'){ damageGerm(g,5); }
+      else { g.dead=true; kill(g); }
+    }
+    G.germs=G.germs.filter(g=>!g.dead);
+    showFloater(it.x,it.y,'💥 전체 폭발!','#FFD24A');
+  } else if(it.kind==='freeze'){ // ❄️ 4초 슬로우
+    G.freeze=4; SFX.freezeS(); buzz(20);
+    showFloater(it.x,it.y,'❄️ 빙결! 적들이 느려진다','#7FD8FF');
+  } else { // 💊 회복
+    G.hp=Math.min(G.maxHp,G.hp+20); SFX.heal(); buzz(20);
+    showFloater(it.x,it.y,'💊 +20 회복!','#46e08a');
+  }
 }
 
 function pointerDown(e){
@@ -363,7 +420,14 @@ function pointerDown(e){
   const pts = e.changedTouches ? e.changedTouches : [e];
   for(const p of pts){
     const x=p.clientX-rect.left, y=p.clientY-rect.top;
-    hitAt(x,y);
+    // 아이템 줍기 우선
+    let picked=false;
+    for(const it of G.items){
+      const dx=x-it.x, dy=y-it.y;
+      if(dx*dx+dy*dy<=30*30){ applyItem(it); it.dead=true; picked=true; break; }
+    }
+    if(picked) G.items=G.items.filter(i=>!i.dead);
+    else hitAt(x,y);
     ripple(x,y);
   }
 }
@@ -381,6 +445,20 @@ function burst(x,y,color,n){
 function spark(x,y,color,n){ burst(x,y,color,n); }
 function ripple(x,y){ G.particles.push({ring:true,x,y,r:6,vr:260,life:.35,max:.35,color:'#5B8DEF'}); }
 function showFloater(x,y,text,color){ G.floaters.push({x,y,text,color,life:1,max:1,vy:-34}); }
+function drawItems(){
+  for(const it of G.items){
+    if(it.ttl<1.5 && Math.floor(G.t*8)%2===0) continue; // 사라지기 직전 깜빡임
+    ctx.save();
+    ctx.translate(it.x, it.y + Math.sin(G.t*3+it.x)*3); // 둥실둥실
+    ctx.beginPath(); ctx.arc(0,0,21,0,7);
+    ctx.fillStyle='rgba(255,255,255,.93)'; ctx.fill();
+    ctx.lineWidth=2.5; ctx.strokeStyle='#5B8DEF'; ctx.stroke();
+    ctx.font='20px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(it.kind==='bomb'?'💣':it.kind==='freeze'?'❄️':'💊', 0, 1);
+    ctx.restore();
+  }
+  ctx.textBaseline='alphabetic';
+}
 
 // ---- 업데이트 ----
 let last=performance.now();
@@ -399,6 +477,11 @@ function update(dt){
     G.fever-=dt;
     if(G.fever<=0){ G.fever=0; document.getElementById('fever').style.opacity=0; }
   }
+  // 빙결 타이머
+  if(G.freeze>0){ G.freeze=Math.max(0,G.freeze-dt); }
+  // 아이템 수명
+  for(const it of G.items) it.ttl-=dt;
+  G.items=G.items.filter(it=>it.ttl>0);
   // 위기 연출 (HP 25% 이하 — 심장박동)
   if(G.hp<=25 && G.hp>0){
     if(!G.lowWarned){ G.lowWarned=true; showFloater(CX,CY-R-56,'⚠ 위험! 게이지를 지켜라','#ff6b6b'); }
@@ -436,12 +519,32 @@ function update(dt){
   }
 
   // ---- 병균 이동 ----
+  const born=[]; // 이번 프레임에 태어나는 병균(보스 소환)
   for(const g of G.germs){
     const dx=CX-g.x, dy=CY-g.y;
     const d=Math.hypot(dx,dy)||1;
-    g.x += dx/d*g.speed*dt;
-    g.y += dy/d*g.speed*dt;
+    const slow = G.freeze>0 ? 0.45 : 1; // ❄️ 빙결 슬로우
+    g.x += dx/d*g.speed*slow*dt;
+    g.y += dy/d*g.speed*slow*dt;
     if(g.hitFlash>0) g.hitFlash-=dt*4;
+    // 보스 패턴: 병균 소환 + 분노
+    if(g.type==='boss' && !g.dead){
+      g.summonT-=dt;
+      if(g.summonT<=0){
+        g.summonT=4;
+        for(let k=0;k<2;k++){
+          const a=Math.random()*Math.PI*2;
+          born.push(makeGerm(g.x+Math.cos(a)*46, g.y+Math.sin(a)*46, 'normal', 1, TYPES.normal.speed*(1.28+G.wave*0.03)));
+        }
+        showFloater(g.x,g.y-g.r-16,'병균 소환!','#e0413f');
+        SFX.summon();
+      }
+      if(!g.enraged && g.hp<=g.maxHp*0.4){
+        g.enraged=true; g.speed*=1.6;
+        showFloater(g.x,g.y-g.r-16,'💢 보스 분노!','#e0413f');
+        SFX.enrage(); buzz([40,40]); G.shake=8;
+      }
+    }
     // 황금 병균은 5초 뒤 도망 (피해 없음)
     if(g.type==='gold'){
       g.ttl-=dt;
@@ -450,7 +553,7 @@ function update(dt){
     // 보호 반경 도달 → 집(가디) 피해
     if(d < R + g.r*0.5){
       if(g.type==='gold'){ g.dead=true; showFloater(g.x,g.y,'휙~ 놓쳤다!','#FFD24A'); continue; }
-      const dmg = g.type==='boss'?34 : g.type==='tank'?18 : g.type==='fast'?9 : 12;
+      const dmg = g.type==='boss'?34 : g.type==='tank'?18 : g.type==='fast'?9 : g.type==='mini'?6 : 12;
       G.hp -= dmg; g.dead=true;
       G.shake=Math.min(16, g.r*0.4); G.guardiHit=0.4; G.guardiPose=1;
       G.combo=0;
@@ -461,6 +564,7 @@ function update(dt){
     }
   }
   G.germs = G.germs.filter(g=>!g.dead);
+  for(const b of born) G.germs.push(b); // 보스 소환분 합류
 
   // ---- 파티클 ----
   for(const p of G.particles){
@@ -492,11 +596,19 @@ function render(){
     drawBase();         // 보호 영역
     for(const g of G.germs) drawGerm(g);
     drawGuardi(CX,CY,R*0.92);
+    drawItems();
   }
   drawParticles();
   drawFloaters();
   ctx.restore();
 
+  // 빙결 — 화면 블루 틴트
+  if(G.state==='play' && G.freeze>0){
+    ctx.save();
+    ctx.globalAlpha = 0.06 + 0.03*Math.sin(G.t*7);
+    ctx.fillStyle='#7FD8FF'; ctx.fillRect(0,0,W,H);
+    ctx.restore();
+  }
   // 피버 — 화면 골드 틴트
   if(G.state==='play' && G.fever>0){
     ctx.save();
@@ -773,6 +885,7 @@ function enterPlay(){
   document.getElementById('over').classList.add('hidden');
   document.getElementById('hud').classList.remove('hidden');
   G.fever=0; G.heartbeat=0; G.lowWarned=false;
+  G.items=[]; G.freeze=0;
   document.getElementById('fever').style.opacity=0;
   SFX.ctx(); // 사용자 제스처 시점에 오디오 활성화(모바일)
 }
@@ -811,6 +924,11 @@ function gameOver(){
   const rank=addTop(G.score,G.wave);
   renderHOF(rank);
   // 결과 표시
+  // 등급 판정
+  const grade = G.wave>=10?'S' : G.wave>=7?'A' : G.wave>=4?'B' : 'C';
+  const gcol = {S:'#FFD24A',A:'#5B8DEF',B:'#46e08a',C:'#8A93A8'}[grade];
+  const gs=document.getElementById('gradeStamp');
+  gs.textContent=grade+'등급'; gs.style.color=gcol; gs.style.borderColor=gcol;
   document.getElementById('finalScore').textContent=G.score.toLocaleString();
   document.getElementById('finalWave').textContent=G.wave;
   document.getElementById('finalKills').textContent=G.kills;
@@ -851,6 +969,19 @@ function refreshMenu(){
 document.getElementById('startBtn').addEventListener('click',startGame);
 document.getElementById('retryBtn').addEventListener('click',startGame);
 document.getElementById('continueBtn').addEventListener('click',continueGame);
+// 점수 자랑(공유) — Web Share API, 미지원 시 클립보드 복사
+document.getElementById('shareBtn').addEventListener('click', async ()=>{
+  const txt='🛡️ 가디의 방어전에서 '+G.score.toLocaleString()+'점 · WAVE '+G.wave+' 달성! 나를 이겨봐!';
+  const url='https://neoniceman.github.io/guardi-defense/';
+  const b=document.getElementById('shareBtn');
+  try{
+    if(navigator.share){ await navigator.share({title:'가디의 방어전', text:txt, url:url}); }
+    else{
+      await navigator.clipboard.writeText(txt+' '+url);
+      b.textContent='✅ 복사 완료!'; setTimeout(()=>b.textContent='📣 점수 자랑',1500);
+    }
+  }catch(e){ /* 사용자가 공유 취소 */ }
+});
 // 음소거 토글
 const muteBtn=document.getElementById('muteBtn');
 function syncMute(){ muteBtn.textContent = SFX.muted?'🔇':'🔊'; }
