@@ -257,7 +257,7 @@ const G = {
   spawnQueue:0, spawnTimer:0, waveActive:false, breakTimer:0,
   shake:0, guardiHit:0, guardiPose:0, // 0 idle,1 shield,2 greet
   fever:0, heartbeat:0, lowWarned:false,
-  items:[], freeze:0,
+  items:[], freeze:0, lookA:0, lookT:0,
   t:0
 };
 
@@ -273,6 +273,7 @@ const TYPES = {
 };
 
 function rand(a,b){return a+Math.random()*(b-a);}
+function easeBack(x){ const c1=1.70158,c3=c1+1; return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2); }
 
 // ---- 웨이브 시작 ----
 function startWave(){
@@ -318,7 +319,7 @@ function makeGerm(x,y,type,hp,speed){
   const t = TYPES[type];
   return { x,y,type, r:t.r, hp, maxHp:hp, speed, seed:Math.random()*99,
     wob:rand(0.7,1.3), dead:false, ttl: type==='gold'?5:0,
-    summonT: type==='boss'?3.2:0, enraged:false };
+    summonT: type==='boss'?3.2:0, enraged:false, age:0 };
 }
 
 // ---- 입력(클릭/터치) ----
@@ -357,6 +358,8 @@ function kill(g){
   G.score += pts; G.kills++;
   burst(g.x,g.y,t.color, g.type==='boss'?40:18);
   burst(g.x,g.y,'#fff', 8);
+  G.particles.push({face:true,x:g.x,y:g.y,r:Math.max(10,g.r*0.75),life:.35,max:.35,color:t.dark});
+  G.lookA=Math.atan2(g.y-CY,g.x-CX); G.lookT=0.5; // 가디가 그쪽을 봄
   showFloater(g.x,g.y,'+'+pts, G.fever>0?'#FFEB99':'#FFD24A');
   if(g.type==='boss'){ SFX.bosskill(); buzz([40,40,80]); }
   else { SFX.pop(); buzz(10); }
@@ -519,8 +522,10 @@ function update(dt){
   }
 
   // ---- 병균 이동 ----
+  if(G.lookT>0) G.lookT-=dt; // 가디 시선
   const born=[]; // 이번 프레임에 태어나는 병균(보스 소환)
   for(const g of G.germs){
+    g.age+=dt;
     const dx=CX-g.x, dy=CY-g.y;
     const d=Math.hypot(dx,dy)||1;
     const slow = G.freeze>0 ? 0.45 : 1; // ❄️ 빙결 슬로우
@@ -545,8 +550,14 @@ function update(dt){
         SFX.enrage(); buzz([40,40]); G.shake=8;
       }
     }
-    // 황금 병균은 5초 뒤 도망 (피해 없음)
+    // 황금 병균은 5초 뒤 도망 (피해 없음) + 반짝이 트레일
     if(g.type==='gold'){
+      g.sparkT=(g.sparkT||0)-dt;
+      if(g.sparkT<=0){
+        g.sparkT=0.09;
+        G.particles.push({x:g.x+rand(-8,8),y:g.y+rand(-8,8),vx:rand(-16,16),vy:rand(-16,16),
+          life:.35,max:.35,color:'#FFD24A',r:rand(1.5,3)});
+      }
       g.ttl-=dt;
       if(g.ttl<=0){ g.dead=true; showFloater(g.x,g.y,'휙~ 놓쳤다!','#FFD24A'); continue; }
     }
@@ -570,6 +581,7 @@ function update(dt){
   for(const p of G.particles){
     p.life-=dt;
     if(p.ring){ p.r += p.vr*dt; }
+    else if(p.face){ /* 제자리에서 사라지는 표정 */ }
     else { p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.92; p.vy*=0.92; p.vy+=140*dt; }
   }
   G.particles=G.particles.filter(p=>p.life>0);
@@ -760,18 +772,20 @@ function drawGuardi(cx,cy,s){
   ctx.beginPath();ctx.ellipse(0,HY+HR*0.34,HR*0.52,HR*0.4,0,0,7);
   ctx.fillStyle='#fff';ctx.fill();
   // 눈
-  const greet=G.guardiPose===2;
+  const greet=G.guardiPose===2 || G.fever>0; // 피버 때도 신난 눈
   const ex=HR*0.38, ey=HY-HR*0.02;
+  const lox=(G.lookT>0?Math.cos(G.lookA):0)*HR*0.07; // 처치 방향 시선
+  const loy=(G.lookT>0?Math.sin(G.lookA):0)*HR*0.05;
   ctx.fillStyle='#2A2A2A';ctx.strokeStyle='#2A2A2A';ctx.lineWidth=HR*0.075;ctx.lineCap='round';
   if(greet){ // 웃는 눈
     ctx.beginPath();ctx.moveTo(-ex-HR*0.13,ey);ctx.quadraticCurveTo(-ex,ey-HR*0.18,-ex+HR*0.13,ey);ctx.stroke();
     ctx.beginPath();ctx.moveTo(ex-HR*0.13,ey);ctx.quadraticCurveTo(ex,ey-HR*0.18,ex+HR*0.13,ey);ctx.stroke();
   } else {
-    ctx.beginPath();ctx.arc(-ex,ey,HR*0.14,0,7);ctx.fill();
-    ctx.beginPath();ctx.arc( ex,ey,HR*0.14,0,7);ctx.fill();
+    ctx.beginPath();ctx.arc(-ex+lox,ey+loy,HR*0.14,0,7);ctx.fill();
+    ctx.beginPath();ctx.arc( ex+lox,ey+loy,HR*0.14,0,7);ctx.fill();
     ctx.fillStyle='#fff';
-    ctx.beginPath();ctx.arc(-ex+HR*0.05,ey-HR*0.05,HR*0.05,0,7);ctx.fill();
-    ctx.beginPath();ctx.arc( ex+HR*0.05,ey-HR*0.05,HR*0.05,0,7);ctx.fill();
+    ctx.beginPath();ctx.arc(-ex+lox+HR*0.05,ey+loy-HR*0.05,HR*0.05,0,7);ctx.fill();
+    ctx.beginPath();ctx.arc( ex+lox+HR*0.05,ey+loy-HR*0.05,HR*0.05,0,7);ctx.fill();
     // 단호한 눈썹
     ctx.strokeStyle='#6B4A2B';ctx.lineWidth=HR*0.07;
     ctx.beginPath();ctx.moveTo(-ex-HR*0.18,ey-HR*0.3);ctx.lineTo(-ex+HR*0.1,ey-HR*0.18);ctx.stroke();
@@ -780,9 +794,13 @@ function drawGuardi(cx,cy,s){
   // 코
   ctx.fillStyle='#6B4A2B';
   ctx.beginPath();ctx.ellipse(0,HY+HR*0.2,HR*0.16,HR*0.13,0,0,7);ctx.fill();
-  // 입
+  // 입 — 피버 때는 신나서 벌린 입
   ctx.strokeStyle='#6B4A2B';ctx.lineWidth=HR*0.055;
   ctx.beginPath();ctx.moveTo(-HR*0.16,HY+HR*0.38);ctx.quadraticCurveTo(0,HY+HR*0.48,HR*0.16,HY+HR*0.38);ctx.stroke();
+  if(G.fever>0){
+    ctx.fillStyle='#F08C8C';
+    ctx.beginPath();ctx.arc(0,HY+HR*0.4,HR*0.09,0,Math.PI);ctx.closePath();ctx.fill();
+  }
 
   ctx.restore();
 }
@@ -798,11 +816,54 @@ function drawGerm(g){
     ctx.fillStyle='#FFD24A'; ctx.fill();
     ctx.restore();
   }
+  const isBoss=g.type==='boss', enr=isBoss&&g.enraged;
+  const look=Math.atan2(CY-g.y,CX-g.x); // 이동(응시) 방향
+  // 독감균 — 잔상 꼬리(속도감)
+  if(g.type==='fast'){
+    for(let k=1;k<=3;k++){
+      ctx.save();
+      ctx.globalAlpha=0.13*(4-k)/3;
+      ctx.translate(g.x-Math.cos(look)*k*11, g.y-Math.sin(look)*k*11);
+      ctx.rotate(look);
+      ctx.beginPath();ctx.ellipse(0,0,g.r*(0.85-k*0.14),g.r*(0.62-k*0.1),0,0,7);
+      ctx.fillStyle=t.color;ctx.fill();
+      ctx.restore();
+    }
+  }
+  // 보스 — 어두운 오라
+  if(isBoss){
+    ctx.save();
+    ctx.globalAlpha=(enr?0.3:0.18)+0.06*Math.sin(G.t*3);
+    ctx.beginPath();ctx.arc(g.x,g.y,g.r*1.55,0,7);
+    ctx.fillStyle=enr?'#7a0806':'#4a0d26';ctx.fill();
+    ctx.restore();
+  }
   ctx.save();
   ctx.translate(g.x,g.y);
-  const wob = 1 + Math.sin(G.t*5*g.wob + g.seed)*0.06;
+  // 등장 — 젤리처럼 뿅
+  if(g.age<0.35){ const s=Math.max(0.15,easeBack(g.age/0.35)); ctx.scale(s,s); }
+  // 종류별 꿈틀 리듬 (빠른균 파닥파닥, 탱커 느릿느릿)
+  const wr = g.type==='fast'?11 : g.type==='mini'?9 : g.type==='split'?6 : g.type==='tank'?2.6 : isBoss?2 : 5;
+  const wa = g.type==='tank'?0.09 : isBoss?0.05 : 0.06;
+  const wob = 1 + Math.sin(G.t*wr*g.wob + g.seed)*wa;
+  if(g.type==='fast'){ ctx.rotate(look); ctx.scale(1.18,0.85); ctx.rotate(-look); } // 유선형
   ctx.scale(wob, 2-wob);
   const rr = g.r;
+  const bodyCol = g.hitFlash>0 ? '#fff' : (enr ? '#b31512' : t.color);
+  const darkCol = enr ? '#6e0c0a' : t.dark;
+  // 보스 — 꿈틀대는 촉수 6개 (몸 뒤)
+  if(isBoss){
+    ctx.strokeStyle=darkCol; ctx.lineCap='round';
+    for(let i=0;i<6;i++){
+      const a=i/6*Math.PI*2 + Math.sin(G.t*2+i)*0.12;
+      const wig=Math.sin(G.t*(enr?7:3.4)+i*1.7)*rr*0.22;
+      const x2=Math.cos(a)*rr*1.5+Math.cos(a+1.57)*wig, y2=Math.sin(a)*rr*1.5+Math.sin(a+1.57)*wig;
+      ctx.lineWidth=rr*0.13;
+      ctx.beginPath();ctx.moveTo(Math.cos(a)*rr*0.85,Math.sin(a)*rr*0.85);
+      ctx.quadraticCurveTo(Math.cos(a)*rr*1.2,Math.sin(a)*rr*1.2,x2,y2);ctx.stroke();
+      ctx.beginPath();ctx.arc(x2,y2,rr*0.09,0,7);ctx.fillStyle=darkCol;ctx.fill();
+    }
+  }
 
   // 스파이크 외곽
   ctx.beginPath();
@@ -814,42 +875,87 @@ function drawGerm(g){
     i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
   }
   ctx.closePath();
-  ctx.fillStyle = g.hitFlash>0? '#fff' : t.color;
+  ctx.fillStyle = bodyCol;
   ctx.fill();
-  ctx.lineWidth=2;ctx.strokeStyle=t.dark;ctx.stroke();
+  ctx.lineWidth = g.type==='tank'?4.5:2; ctx.strokeStyle=darkCol; ctx.stroke();
+  if(g.type==='tank'){ // 갑옷 이중 테두리
+    ctx.beginPath();ctx.arc(0,0,rr*0.84,0,7);
+    ctx.globalAlpha=.55;ctx.lineWidth=3;ctx.stroke();ctx.globalAlpha=1;
+  }
 
   // 몸통 원
   ctx.beginPath();ctx.arc(0,0,rr*0.7,0,7);
-  ctx.fillStyle = g.hitFlash>0? '#ffd9d9' : t.dark;ctx.globalAlpha=.35;ctx.fill();ctx.globalAlpha=1;
+  ctx.fillStyle = g.hitFlash>0? '#ffd9d9' : darkCol;ctx.globalAlpha=.35;ctx.fill();ctx.globalAlpha=1;
 
   // 얼룩
-  ctx.fillStyle=t.dark;ctx.globalAlpha=.5;
+  ctx.fillStyle=darkCol;ctx.globalAlpha=.5;
   ctx.beginPath();ctx.arc(-rr*0.25,rr*0.2,rr*0.16,0,7);ctx.fill();
   ctx.beginPath();ctx.arc(rr*0.3,-rr*0.1,rr*0.12,0,7);ctx.fill();
   ctx.globalAlpha=1;
+  // 분열균 — 가운데 균열(쪼개질 예고)
+  if(g.type==='split'){
+    ctx.strokeStyle=darkCol;ctx.lineWidth=rr*0.08;ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(0,-rr*0.7);ctx.lineTo(-rr*0.1,-rr*0.3);ctx.lineTo(rr*0.1,0);
+    ctx.lineTo(-rr*0.08,rr*0.35);ctx.lineTo(0,rr*0.7);
+    ctx.stroke();
+  }
 
-  // 눈 (째려보는)
-  const eo = rr*0.26;
-  ctx.fillStyle='#fff';
-  ctx.beginPath();ctx.arc(-eo,-rr*0.1,rr*0.2,0,7);ctx.fill();
-  ctx.beginPath();ctx.arc( eo,-rr*0.1,rr*0.2,0,7);ctx.fill();
-  ctx.fillStyle='#1a1a1a';
-  const look=Math.atan2(CY-g.y,CX-g.x);
-  const lx=Math.cos(look)*rr*0.07, ly=Math.sin(look)*rr*0.07;
-  ctx.beginPath();ctx.arc(-eo+lx,-rr*0.1+ly,rr*0.1,0,7);ctx.fill();
-  ctx.beginPath();ctx.arc( eo+lx,-rr*0.1+ly,rr*0.1,0,7);ctx.fill();
-  // 찡그린 눈썹
-  ctx.strokeStyle='#1a1a1a';ctx.lineWidth=rr*0.06;ctx.lineCap='round';
-  ctx.beginPath();ctx.moveTo(-eo-rr*0.18,-rr*0.32);ctx.lineTo(-eo+rr*0.05,-rr*0.22);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(eo+rr*0.18,-rr*0.32);ctx.lineTo(eo-rr*0.05,-rr*0.22);ctx.stroke();
-  // 입
-  ctx.beginPath();ctx.moveTo(-rr*0.18,rr*0.32);ctx.quadraticCurveTo(0,rr*0.18,rr*0.18,rr*0.32);ctx.stroke();
-
+  // 눈/표정 — 피격 시 >_<, 보스 분노 시 빨간 눈
+  const hurt = g.hitFlash>0.5;
+  const pupil = enr ? '#ff2b28' : '#1a1a1a';
+  function eye(ex0,ey0,er){
+    if(hurt){ // >< 아픈 눈
+      ctx.strokeStyle='#1a1a1a';ctx.lineWidth=er*0.42;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(ex0-er*0.65,ey0-er*0.55);ctx.lineTo(ex0+er*0.65,ey0+er*0.55);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(ex0+er*0.65,ey0-er*0.55);ctx.lineTo(ex0-er*0.65,ey0+er*0.55);ctx.stroke();
+      return;
+    }
+    ctx.fillStyle='#fff';
+    ctx.beginPath();ctx.arc(ex0,ey0,er,0,7);ctx.fill();
+    ctx.fillStyle=pupil;
+    ctx.beginPath();ctx.arc(ex0+Math.cos(look)*er*0.35,ey0+Math.sin(look)*er*0.35,er*0.5,0,7);ctx.fill();
+  }
+  if(g.type==='split'){ // 두 얼굴 — 분열 예고
+    eye(-rr*0.4,-rr*0.16,rr*0.13); eye(-rr*0.17,-rr*0.1,rr*0.13);
+    eye( rr*0.17,-rr*0.1,rr*0.13); eye( rr*0.4,-rr*0.16,rr*0.13);
+  } else {
+    const eo = rr*0.26;
+    eye(-eo,-rr*0.1,rr*0.2); eye(eo,-rr*0.1,rr*0.2);
+    if(!hurt){ // 찡그린 눈썹
+      ctx.strokeStyle='#1a1a1a';ctx.lineWidth=rr*0.06;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(-eo-rr*0.18,-rr*0.32);ctx.lineTo(-eo+rr*0.05,-rr*0.22);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(eo+rr*0.18,-rr*0.32);ctx.lineTo(eo-rr*0.05,-rr*0.22);ctx.stroke();
+    }
+  }
+  // 입 — 보스는 이빨 달린 입
+  if(isBoss){
+    ctx.fillStyle='#3d0605';
+    ctx.beginPath();ctx.arc(0,rr*0.28,rr*0.26,0,Math.PI);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#fff';
+    for(let i=0;i<4;i++){
+      const tx0=-rr*0.21+i*rr*0.14;
+      ctx.beginPath();ctx.moveTo(tx0,rr*0.28);ctx.lineTo(tx0+rr*0.07,rr*0.42);ctx.lineTo(tx0+rr*0.14,rr*0.28);ctx.closePath();ctx.fill();
+    }
+  } else {
+    ctx.strokeStyle='#1a1a1a';ctx.lineWidth=rr*0.06;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(-rr*0.18,rr*0.32);ctx.quadraticCurveTo(0,rr*(hurt?0.42:0.18),rr*0.18,rr*0.32);ctx.stroke();
+  }
+  // 보스 왕관
+  if(isBoss){
+    ctx.fillStyle='#FFD24A';
+    ctx.beginPath();
+    ctx.moveTo(-rr*0.34,-rr*0.76);
+    ctx.lineTo(-rr*0.36,-rr*1.02);ctx.lineTo(-rr*0.17,-rr*0.85);ctx.lineTo(0,-rr*1.1);
+    ctx.lineTo(rr*0.17,-rr*0.85);ctx.lineTo(rr*0.36,-rr*1.02);ctx.lineTo(rr*0.34,-rr*0.76);
+    ctx.closePath();ctx.fill();
+    ctx.strokeStyle='#c99b12';ctx.lineWidth=2;ctx.stroke();
+  }
   // 탱커/보스 체력바
   if(g.maxHp>1){
-    const bw=rr*1.6, bh=5;
-    ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(-bw/2,-rr-12,bw,bh);
-    ctx.fillStyle='#46e08a';ctx.fillRect(-bw/2,-rr-12,bw*(g.hp/g.maxHp),bh);
+    const bw=rr*1.6, bh=5, by=isBoss? -rr*1.22-8 : -rr-12;
+    ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(-bw/2,by,bw,bh);
+    ctx.fillStyle=enr?'#ff5a4e':'#46e08a';ctx.fillRect(-bw/2,by,bw*(g.hp/g.maxHp),bh);
   }
   ctx.restore();
 }
@@ -860,6 +966,17 @@ function drawParticles(){
     if(p.ring){
       ctx.globalAlpha=a*0.6;ctx.strokeStyle=p.color;ctx.lineWidth=3;
       ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.stroke();
+    } else if(p.face){ // 처치 순간 X눈 표정이 커지며 사라짐
+      const fr=p.r*(1+(1-a)*0.6);
+      ctx.save();ctx.translate(p.x,p.y);ctx.globalAlpha=a*0.85;
+      ctx.strokeStyle=p.color;ctx.lineWidth=Math.max(2,fr*0.14);ctx.lineCap='round';
+      for(const s of [-1,1]){
+        const ex=s*fr*0.4;
+        ctx.beginPath();ctx.moveTo(ex-fr*0.16,-fr*0.16);ctx.lineTo(ex+fr*0.16,fr*0.16);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(ex+fr*0.16,-fr*0.16);ctx.lineTo(ex-fr*0.16,fr*0.16);ctx.stroke();
+      }
+      ctx.beginPath();ctx.arc(0,fr*0.35,fr*0.14,0,7);ctx.stroke(); // 벌어진 입
+      ctx.restore();
     } else {
       ctx.globalAlpha=a;ctx.fillStyle=p.color;
       ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.fill();
