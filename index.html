@@ -75,6 +75,13 @@
   .hof .empty{text-align:center;opacity:.5;font-size:13px;padding:10px;}
   .lifestat{display:flex;gap:18px;justify-content:center;font-size:12px;opacity:.8;margin-top:8px;flex-wrap:wrap;}
   .lifestat b{color:#fff;font-weight:800;}
+  #muteBtn{position:absolute;right:14px;bottom:14px;width:46px;height:46px;border-radius:50%;
+    border:1.5px solid rgba(91,141,239,.5);background:rgba(10,17,64,.55);color:#fff;font-size:20px;
+    pointer-events:auto;cursor:pointer;backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;}
+  #muteBtn:active{transform:scale(.92);}
+  #fever{position:absolute;left:50%;top:112px;transform:translateX(-50%);font-weight:900;
+    font-size:24px;color:#FFD24A;text-shadow:0 0 16px rgba(255,210,74,.9),0 2px 8px rgba(0,0,0,.5);
+    opacity:0;transition:opacity .2s;white-space:nowrap;}
 </style>
 </head>
 <body>
@@ -90,6 +97,8 @@
         <div class="hpbar"><div class="hpfill" id="hpfill"></div></div></div>
     </div>
     <div id="combo"></div>
+    <div id="fever">🔥 FEVER x2</div>
+    <button id="muteBtn" aria-label="소리 켜기/끄기">🔊</button>
   </div>
 
   <!-- 시작 화면 -->
@@ -110,6 +119,7 @@
       <span><i class="dot" style="background:#9b6cf0"></i>독감균(빠름)</span>
       <span><i class="dot" style="background:#f0922e"></i>뚱뚱균(탱커)</span>
       <span><i class="dot" style="background:#e0413f"></i>변종 보스</span>
+      <span><i class="dot" style="background:#FFD24A"></i>황금(피버!)</span>
     </div>
     <div class="hint">병균을 <b>클릭 / 터치</b>해서 터뜨리세요.<br>가디(중앙)에 닿으면 보장 게이지가 깎입니다.<br>게이지가 0이 되면 게임 오버!</div>
     <div class="brand">삼성화재가 당신의 일상을 지켜드립니다.</div>
@@ -165,6 +175,48 @@ function writeSave(){ DB.write(KEY.save,{score:G.score,wave:G.wave,hp:G.hp,kills
 function clearSave(){ DB.del(KEY.save); }
 function fmtDate(ts){ const d=new Date(ts); return (d.getMonth()+1)+'/'+d.getDate(); }
 
+// ---- 사운드(Web Audio 코드 합성 — 외부 파일 없음) & 진동 ----
+const SFX = {
+  muted: !!DB.read('guardi_muted', false),
+  ac: null,
+  ctx(){
+    if(!this.ac){ const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return null; this.ac=new AC(); }
+    if(this.ac.state==='suspended') this.ac.resume();
+    return this.ac;
+  },
+  tone(f0,f1,dur,type,vol,delay){
+    if(this.muted) return; const ac=this.ctx(); if(!ac) return;
+    const t0=ac.currentTime+(delay||0);
+    const o=ac.createOscillator(), g=ac.createGain();
+    o.type=type; o.frequency.setValueAtTime(f0,t0);
+    o.frequency.exponentialRampToValueAtTime(Math.max(1,f1),t0+dur);
+    g.gain.setValueAtTime(vol,t0);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t0); o.stop(t0+dur+0.02);
+  },
+  noise(dur,vol,delay){
+    if(this.muted) return; const ac=this.ctx(); if(!ac) return;
+    const t0=ac.currentTime+(delay||0);
+    const n=Math.floor(ac.sampleRate*dur), buf=ac.createBuffer(1,n,ac.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+    const s=ac.createBufferSource(); s.buffer=buf;
+    const g=ac.createGain(); g.gain.setValueAtTime(vol,t0);
+    s.connect(g); g.connect(ac.destination); s.start(t0);
+  },
+  pop(){ this.tone(480+Math.random()*220, 120, .12, 'square', .16); this.noise(.05,.08); },
+  hit(){ this.tone(230, 90, .09, 'square', .12); },
+  hurt(){ this.tone(150, 55, .28, 'sawtooth', .2); this.noise(.14,.12); },
+  clear(){ this.tone(520,780,.12,'triangle',.15); this.tone(780,1046,.16,'triangle',.15,.1); },
+  boss(){ this.tone(180,140,.24,'sawtooth',.2); this.tone(180,140,.24,'sawtooth',.2,.3); },
+  bosskill(){ this.tone(300,900,.35,'square',.18); this.noise(.28,.16); },
+  gold(){ this.tone(900,1400,.1,'triangle',.14); this.tone(1200,1800,.12,'triangle',.14,.08); },
+  fever(){ [440,554,659,880].forEach((f,i)=>this.tone(f,f,.12,'square',.14,i*.07)); },
+  heartbeat(){ this.tone(70,45,.14,'sine',.45); this.tone(62,40,.12,'sine',.35,.18); },
+  over(){ this.tone(420,110,.7,'sawtooth',.16); }
+};
+function buzz(p){ try{ if(navigator.vibrate) navigator.vibrate(p); }catch(e){} }
+
 const cv = document.getElementById('game');
 const ctx = cv.getContext('2d');
 const DPR = Math.min(window.devicePixelRatio||1, 2);
@@ -187,6 +239,7 @@ const G = {
   germs:[], particles:[], floaters:[], saveTimer:0,
   spawnQueue:0, spawnTimer:0, waveActive:false, breakTimer:0,
   shake:0, guardiHit:0, guardiPose:0, // 0 idle,1 shield,2 greet
+  fever:0, heartbeat:0, lowWarned:false,
   t:0
 };
 
@@ -195,7 +248,8 @@ const TYPES = {
   normal:{ name:'콜록이', color:'#3ec96b', dark:'#2a9c50', r:24, hp:1, speed:42, score:10, spikes:8 },
   fast  :{ name:'독감균', color:'#9b6cf0', dark:'#6f43c4', r:19, hp:1, speed:78, score:16, spikes:6 },
   tank  :{ name:'뚱뚱균', color:'#f0922e', dark:'#c46d12', r:34, hp:3, speed:26, score:30, spikes:11 },
-  boss  :{ name:'변종 보스', color:'#e0413f', dark:'#a82321', r:52, hp:14, speed:20, score:200, spikes:14 }
+  boss  :{ name:'변종 보스', color:'#e0413f', dark:'#a82321', r:52, hp:14, speed:20, score:200, spikes:14 },
+  gold  :{ name:'황금 콜록이', color:'#FFD24A', dark:'#D4A017', r:21, hp:1, speed:88, score:50, spikes:9 }
 };
 
 function rand(a,b){return a+Math.random()*(b-a);}
@@ -223,9 +277,11 @@ function spawnGerm(){
   const roll = Math.random();
   if(G.wave>=1 && roll<0.24) type='fast';
   if(G.wave>=2 && roll>0.84) type='tank';
+  if(Math.random()<0.06) type='gold'; // 가끔 황금 병균 — 잡으면 피버!
   const t = TYPES[type];
   const spd = t.speed * (1.28 + G.wave*0.03);
   G.germs.push(makeGerm(x,y,type,t.hp,spd));
+  if(type==='gold'){ SFX.gold(); showFloater(x+(CX-x)*0.15, y+(CY-y)*0.15, '✨', '#FFD24A'); }
 }
 function spawnBoss(){
   const ang = Math.random()*Math.PI*2;
@@ -235,11 +291,12 @@ function spawnBoss(){
   G.germs.push(makeGerm(CX+Math.cos(ang)*dist, CY+Math.sin(ang)*dist,'boss',hp, t.speed*(1+G.wave*0.02)));
   showFloater(CX, CY - R - 30, '⚠ 변종 보스 출현!', '#e0413f');
   G.shake = 10;
+  SFX.boss(); buzz([60,60,60]);
 }
 function makeGerm(x,y,type,hp,speed){
   const t = TYPES[type];
   return { x,y,type, r:t.r, hp, maxHp:hp, speed, seed:Math.random()*99,
-    wob:rand(0.7,1.3), dead:false };
+    wob:rand(0.7,1.3), dead:false, ttl: type==='gold'?5:0 };
 }
 
 // ---- 입력(클릭/터치) ----
@@ -266,22 +323,35 @@ function damageGerm(g,dmg,px,py){
   } else {
     // 탱커 맞을 때 살짝 뒤로
     spark(g.x,g.y,'#fff',4);
+    SFX.hit(); buzz(8);
   }
 }
 function kill(g){
   const t=TYPES[g.type];
   G.combo++; G.comboTimer=1.6;
   const mult = 1 + Math.min(G.combo-1,9)*0.1;
-  const pts = Math.round(t.score*mult);
+  let pts = Math.round(t.score*mult);
+  if(G.fever>0) pts*=2; // 피버 2배
   G.score += pts; G.kills++;
   burst(g.x,g.y,t.color, g.type==='boss'?40:18);
   burst(g.x,g.y,'#fff', 8);
-  showFloater(g.x,g.y,'+'+pts, '#FFD24A');
+  showFloater(g.x,g.y,'+'+pts, G.fever>0?'#FFEB99':'#FFD24A');
+  if(g.type==='boss'){ SFX.bosskill(); buzz([40,40,80]); }
+  else { SFX.pop(); buzz(10); }
   if(G.combo>=3){
     const c=document.getElementById('combo');
     c.textContent = G.combo+' COMBO!';
     c.style.opacity=1; clearTimeout(G._ct);
     G._ct=setTimeout(()=>c.style.opacity=0,700);
+    const cf=420+Math.min(G.combo,15)*35;
+    SFX.tone(cf,cf,.07,'triangle',.09);
+  }
+  if(g.type==='gold'){ // 피버타임 발동!
+    G.fever=5;
+    SFX.fever(); buzz([30,30,30,30,60]);
+    document.getElementById('fever').style.opacity=1;
+    showFloater(CX,CY-R-56,'🔥 FEVER TIME! 점수 2배','#FFD24A');
+    burst(g.x,g.y,'#FFD24A',30);
   }
   if(g.type==='boss'){ G.shake=14; showFloater(CX,CY-R-30,'보스 격파! 🎉','#FFD24A'); }
 }
@@ -324,6 +394,17 @@ function loop(now){
 function update(dt){
   // 콤보 타이머
   if(G.comboTimer>0){ G.comboTimer-=dt; if(G.comboTimer<=0) G.combo=0; }
+  // 피버 타이머
+  if(G.fever>0){
+    G.fever-=dt;
+    if(G.fever<=0){ G.fever=0; document.getElementById('fever').style.opacity=0; }
+  }
+  // 위기 연출 (HP 25% 이하 — 심장박동)
+  if(G.hp<=25 && G.hp>0){
+    if(!G.lowWarned){ G.lowWarned=true; showFloater(CX,CY-R-56,'⚠ 위험! 게이지를 지켜라','#ff6b6b'); }
+    G.heartbeat-=dt;
+    if(G.heartbeat<=0){ G.heartbeat=0.95; SFX.heartbeat(); buzz(25); }
+  } else if(G.hp>25){ G.lowWarned=false; }
   // 자동저장(이어하기)
   G.saveTimer-=dt; if(G.saveTimer<=0){ G.saveTimer=1.5; if(G.hp>0) writeSave(); }
   if(G.shake>0) G.shake=Math.max(0,G.shake-dt*28);
@@ -346,6 +427,7 @@ function update(dt){
       G.waveActive=false; G.breakTimer=1.6; G.guardiPose=2; // 인사
       showFloater(CX,CY-R-30,'WAVE '+G.wave+' 클리어!','#46e08a');
       G.hp=Math.min(G.maxHp,G.hp+6); // 소량 회복 보상
+      SFX.clear();
       writeSave(); // 이어하기 저장
     }
   } else {
@@ -360,14 +442,21 @@ function update(dt){
     g.x += dx/d*g.speed*dt;
     g.y += dy/d*g.speed*dt;
     if(g.hitFlash>0) g.hitFlash-=dt*4;
+    // 황금 병균은 5초 뒤 도망 (피해 없음)
+    if(g.type==='gold'){
+      g.ttl-=dt;
+      if(g.ttl<=0){ g.dead=true; showFloater(g.x,g.y,'휙~ 놓쳤다!','#FFD24A'); continue; }
+    }
     // 보호 반경 도달 → 집(가디) 피해
     if(d < R + g.r*0.5){
+      if(g.type==='gold'){ g.dead=true; showFloater(g.x,g.y,'휙~ 놓쳤다!','#FFD24A'); continue; }
       const dmg = g.type==='boss'?34 : g.type==='tank'?18 : g.type==='fast'?9 : 12;
       G.hp -= dmg; g.dead=true;
       G.shake=Math.min(16, g.r*0.4); G.guardiHit=0.4; G.guardiPose=1;
       G.combo=0;
       burst(g.x,g.y,TYPES[g.type].color,14);
       showFloater(g.x,g.y,'-'+dmg,'#ff6b6b');
+      SFX.hurt(); buzz(80);
       if(G.hp<=0){ G.hp=0; gameOver(); }
     }
   }
@@ -407,6 +496,24 @@ function render(){
   drawParticles();
   drawFloaters();
   ctx.restore();
+
+  // 피버 — 화면 골드 틴트
+  if(G.state==='play' && G.fever>0){
+    ctx.save();
+    ctx.globalAlpha = 0.07 + 0.05*Math.sin(G.t*10);
+    ctx.fillStyle='#FFD24A'; ctx.fillRect(0,0,W,H);
+    ctx.restore();
+  }
+  // 위기 — 화면 가장자리 붉은 맥박
+  if(G.state==='play' && G.hp<=25 && G.hp>0){
+    ctx.save();
+    const a = 0.15 + 0.13*Math.sin(G.t*6);
+    const gr = ctx.createRadialGradient(CX,CY,Math.min(W,H)*0.34, CX,CY,Math.max(W,H)*0.72);
+    gr.addColorStop(0,'rgba(224,65,63,0)');
+    gr.addColorStop(1,'rgba(224,65,63,'+a.toFixed(3)+')');
+    ctx.fillStyle=gr; ctx.fillRect(0,0,W,H);
+    ctx.restore();
+  }
 }
 
 function drawBackground(){
@@ -571,6 +678,14 @@ function drawGuardi(cx,cy,s){
 // ---- 병균 ----
 function drawGerm(g){
   const t=TYPES[g.type];
+  if(g.type==='gold'){
+    if(g.ttl<1.5 && Math.floor(G.t*8)%2===0) return; // 도망 직전 깜빡임
+    ctx.save();
+    ctx.globalAlpha = 0.3 + 0.15*Math.sin(G.t*8+g.seed);
+    ctx.beginPath(); ctx.arc(g.x,g.y,g.r*1.7,0,7);
+    ctx.fillStyle='#FFD24A'; ctx.fill();
+    ctx.restore();
+  }
   ctx.save();
   ctx.translate(g.x,g.y);
   const wob = 1 + Math.sin(G.t*5*g.wob + g.seed)*0.06;
@@ -657,6 +772,9 @@ function enterPlay(){
   document.getElementById('start').classList.add('hidden');
   document.getElementById('over').classList.add('hidden');
   document.getElementById('hud').classList.remove('hidden');
+  G.fever=0; G.heartbeat=0; G.lowWarned=false;
+  document.getElementById('fever').style.opacity=0;
+  SFX.ctx(); // 사용자 제스처 시점에 오디오 활성화(모바일)
 }
 function startGame(){
   clearSave();
@@ -678,6 +796,8 @@ function continueGame(){
 function gameOver(){
   G.state='over';
   G.germs=[];
+  G.fever=0; document.getElementById('fever').style.opacity=0;
+  SFX.over(); buzz(180);
   clearSave(); // 게임 종료 → 이어하기 삭제
   // 최고점
   if(G.score>G.best){ G.best=G.score; DB.write(KEY.best,G.best); }
@@ -731,6 +851,15 @@ function refreshMenu(){
 document.getElementById('startBtn').addEventListener('click',startGame);
 document.getElementById('retryBtn').addEventListener('click',startGame);
 document.getElementById('continueBtn').addEventListener('click',continueGame);
+// 음소거 토글
+const muteBtn=document.getElementById('muteBtn');
+function syncMute(){ muteBtn.textContent = SFX.muted?'🔇':'🔊'; }
+muteBtn.addEventListener('click',e=>{
+  e.stopPropagation();
+  SFX.muted=!SFX.muted; DB.write('guardi_muted',SFX.muted); syncMute();
+  if(!SFX.muted) SFX.pop(); // 켤 때 확인음
+});
+syncMute();
 // 탭 닫기/전환 시 안전 저장
 window.addEventListener('beforeunload',()=>{ if(G.state==='play'&&G.hp>0) writeSave(); });
 document.addEventListener('visibilitychange',()=>{ if(document.hidden&&G.state==='play'&&G.hp>0) writeSave(); });
