@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>가디의 방어전 — Guardi Defense</title>
+<!-- 링크 미리보기(카톡/SNS) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="가디의 방어전 🛡️ 병균을 막아라!">
+<meta property="og:description" content="삼성화재 마스코트 가디와 함께하는 1분 미니게임. 설치 없이 바로 플레이!">
+<meta property="og:image" content="https://neoniceman.github.io/guardi-defense/og.png">
+<meta property="og:url" content="https://neoniceman.github.io/guardi-defense/">
+<meta name="twitter:card" content="summary_large_image">
 <style>
   :root{
     --main:#1428A0;      /* 메인 블루 */
@@ -1028,6 +1035,7 @@ function gameOver(){
   G.germs=[];
   G.fever=0; document.getElementById('fever').style.opacity=0;
   SFX.over(); buzz(180);
+  buildShareCard(); // 공유 카드 미리 생성(버튼 즉시 반응용)
   clearSave(); // 게임 종료 → 이어하기 삭제
   // 최고점
   if(G.score>G.best){ G.best=G.score; DB.write(KEY.best,G.best); }
@@ -1086,16 +1094,123 @@ function refreshMenu(){
 document.getElementById('startBtn').addEventListener('click',startGame);
 document.getElementById('retryBtn').addEventListener('click',startGame);
 document.getElementById('continueBtn').addEventListener('click',continueGame);
-// 점수 자랑(공유) — Web Share API, 미지원 시 클립보드 복사
+// ---- 공유 카드(캔버스 생성, 1080x1350) ----
+const GUARDI_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 82 160 228" width="480" height="684">
+<path d="M30 95 Q8 150 30 200 Q52 175 52 120 Z" fill="#C98A4B"/>
+<path d="M130 95 Q152 150 130 200 Q108 175 108 120 Z" fill="#C98A4B"/>
+<path d="M44 200 Q44 180 80 180 Q116 180 116 200 L120 270 Q120 290 80 290 Q40 290 40 270 Z" fill="#1428A0"/>
+<ellipse cx="62" cy="290" rx="14" ry="9" fill="#6B4A2B"/><ellipse cx="98" cy="290" rx="14" ry="9" fill="#6B4A2B"/>
+<ellipse cx="36" cy="234" rx="11" ry="16" fill="#1428A0"/>
+<path d="M96 196 L150 216 Q150 270 96 296 Q42 270 42 216 Z" fill="#5B8DEF"/>
+<path d="M96 196 L150 216 Q150 270 96 296 Q42 270 42 216 Z" fill="none" stroke="#1428A0" stroke-width="4"/>
+<path d="M96 218 l16 7 -5 22 -11 8 -11 -8 -5 -22 z" fill="#F4E9D8"/><circle cx="118" cy="244" r="11" fill="#F4E9D8"/>
+<circle cx="80" cy="110" r="68" fill="#F4E9D8"/>
+<circle cx="44" cy="128" r="13" fill="#F2B6B0" opacity="0.6"/><circle cx="116" cy="128" r="13" fill="#F2B6B0" opacity="0.6"/>
+<ellipse cx="80" cy="132" rx="34" ry="26" fill="#FFFFFF"/>
+<path d="M54 100 Q62 92 70 100" fill="none" stroke="#2A2A2A" stroke-width="3.5" stroke-linecap="round"/>
+<path d="M90 100 Q98 92 106 100" fill="none" stroke="#2A2A2A" stroke-width="3.5" stroke-linecap="round"/>
+<ellipse cx="80" cy="120" rx="11" ry="9" fill="#6B4A2B"/>
+<path d="M64 138 Q80 154 96 138" fill="none" stroke="#6B4A2B" stroke-width="3" stroke-linecap="round"/>
+<path d="M74 146 Q80 154 86 146 Q86 152 80 153 Q74 152 74 146 Z" fill="#F08C8C"/></svg>`;
+let shareBlob=null;
+function rrPath(c,x,y,w,h,r){
+  c.beginPath();c.moveTo(x+r,y);
+  c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);
+  c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();
+}
+function buildShareCard(){
+  shareBlob=null;
+  const cw=1080,ch=1350;
+  const grade = G.wave>=10?'S' : G.wave>=7?'A' : G.wave>=4?'B' : 'C';
+  const gcol = {S:'#FFD24A',A:'#5B8DEF',B:'#46e08a',C:'#8A93A8'}[grade];
+  const c=document.createElement('canvas');c.width=cw;c.height=ch;
+  const x=c.getContext('2d');
+  const F='"Apple SD Gothic Neo","Malgun Gothic",sans-serif';
+  // 배경
+  const bg=x.createRadialGradient(cw/2,ch*0.35,100,cw/2,ch*0.55,ch*0.85);
+  bg.addColorStop(0,'#26377f');bg.addColorStop(1,'#0A1140');
+  x.fillStyle=bg;x.fillRect(0,0,cw,ch);
+  x.globalAlpha=0.1;x.fillStyle='#5B8DEF';
+  for(let px=40;px<cw;px+=72)for(let py=40;py<ch;py+=72){x.beginPath();x.arc(px,py,3,0,7);x.fill();}
+  x.globalAlpha=1;
+  const gl=x.createRadialGradient(cw/2,340,50,cw/2,340,420);
+  gl.addColorStop(0,'rgba(255,210,74,.16)');gl.addColorStop(1,'rgba(255,210,74,0)');
+  x.fillStyle=gl;x.fillRect(0,0,cw,760);
+  // 격퇴당한 병균 장식
+  function cardGerm(gx,gy,r,col,dk,rot){
+    x.save();x.translate(gx,gy);x.rotate(rot);
+    x.beginPath();
+    for(let i=0;i<=16;i++){const a=i/16*Math.PI*2,rad=i%2?r*0.78:r;
+      i?x.lineTo(Math.cos(a)*rad,Math.sin(a)*rad):x.moveTo(Math.cos(a)*rad,Math.sin(a)*rad);}
+    x.closePath();x.fillStyle=col;x.fill();x.lineWidth=3;x.strokeStyle=dk;x.stroke();
+    x.strokeStyle='#1a1a1a';x.lineWidth=r*0.09;x.lineCap='round';
+    for(const s of[-1,1]){const ex=s*r*0.3;
+      x.beginPath();x.moveTo(ex-r*0.12,-r*0.2);x.lineTo(ex+r*0.12,r*0.02);x.stroke();
+      x.beginPath();x.moveTo(ex+r*0.12,-r*0.2);x.lineTo(ex-r*0.12,r*0.02);x.stroke();}
+    x.beginPath();x.arc(0,r*0.3,r*0.12,0,7);x.stroke();
+    x.restore();
+  }
+  cardGerm(95,180,52,'#3ec96b','#2a9c50',-0.3);
+  cardGerm(990,240,44,'#9b6cf0','#6f43c4',0.4);
+  cardGerm(80,640,40,'#2bd4c9','#149e93',0.2);
+  cardGerm(1000,610,58,'#f0922e','#c46d12',-0.2);
+  // 타이틀
+  x.textAlign='center';
+  x.font='900 76px '+F;x.fillStyle='#fff';
+  x.fillText('가디의 방어전',cw/2,150);
+  x.font='600 34px '+F;x.fillStyle='#9FB2E0';
+  x.fillText('SAMSUNG FIRE & MARINE · GUARDI DEFENSE',cw/2,205);
+  // 마스코트(비동기 로드 후 나머지)
+  const img=new Image();
+  img.onload=()=>{
+    x.drawImage(img,cw/2-190,255,380,542);
+    // 등급 도장
+    x.save();
+    x.translate(cw/2+250,380);x.rotate(-0.14);
+    x.strokeStyle=gcol;x.lineWidth=10;x.fillStyle='rgba(10,17,64,.35)';
+    rrPath(x,-145,-85,290,170,26);x.fill();x.stroke();
+    x.fillStyle=gcol;x.font='900 110px '+F;x.textAlign='center';
+    x.fillText(grade+'등급',0,40);
+    x.restore();
+    // 점수
+    x.textAlign='center';
+    x.font='900 150px '+F;x.fillStyle='#FFD24A';
+    x.fillText(G.score.toLocaleString()+'점',cw/2,930);
+    x.font='700 46px '+F;x.fillStyle='#fff';
+    x.fillText('WAVE '+G.wave+'  ·  병균 '+G.kills+'마리 격퇴',cw/2,1005);
+    // 도전 리본
+    x.fillStyle='#FFD24A';rrPath(x,cw/2-330,1055,660,86,43);x.fill();
+    x.fillStyle='#0A1140';x.font='900 44px '+F;
+    x.fillText('나를 이겨봐! 💪',cw/2,1113);
+    // CTA (URL 대신 문구 — 링크는 공유 시 별도 전달)
+    x.font='700 38px '+F;x.fillStyle='#7FA4F5';
+    x.fillText('👉 지금 바로 도전하기',cw/2,1210);
+    x.font='600 30px '+F;x.fillStyle='#8A93B5';
+    x.fillText('삼성화재가 당신의 일상을 지켜드립니다',cw/2,1280);
+    c.toBlob(b=>{shareBlob=b;},'image/png');
+  };
+  img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(GUARDI_SVG)));
+}
+
+// 점수 자랑(공유) — 이미지 카드 공유, 미지원 시 이미지 저장+텍스트 복사
 document.getElementById('shareBtn').addEventListener('click', async ()=>{
   const txt='🛡️ 가디의 방어전에서 '+G.score.toLocaleString()+'점 · WAVE '+G.wave+' 달성! 나를 이겨봐!';
   const url='https://neoniceman.github.io/guardi-defense/';
   const b=document.getElementById('shareBtn');
   try{
-    if(navigator.share){ await navigator.share({title:'가디의 방어전', text:txt, url:url}); }
-    else{
+    const file = shareBlob ? new File([shareBlob],'guardi-score.png',{type:'image/png'}) : null;
+    if(file && navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:'가디의 방어전', text:txt, url:url});
+    } else if(navigator.share){
+      await navigator.share({title:'가디의 방어전', text:txt, url:url});
+    } else {
+      if(shareBlob){ // PC: 이미지 저장 + 텍스트 복사
+        const a=document.createElement('a');
+        a.href=URL.createObjectURL(shareBlob);a.download='가디의방어전_점수.png';a.click();
+        setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+      }
       await navigator.clipboard.writeText(txt+' '+url);
-      b.textContent='✅ 복사 완료!'; setTimeout(()=>b.textContent='📣 점수 자랑',1500);
+      b.textContent='✅ 이미지 저장+복사!'; setTimeout(()=>b.textContent='📣 점수 자랑',1800);
     }
   }catch(e){ /* 사용자가 공유 취소 */ }
 });
