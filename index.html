@@ -1200,7 +1200,8 @@ document.getElementById('shareBtn').addEventListener('click', async ()=>{
   try{
     const file = shareBlob ? new File([shareBlob],'guardi-score.png',{type:'image/png'}) : null;
     if(file && navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({files:[file], title:'가디의 방어전', text:txt, url:url});
+      // 이미지에 점수·문구가 다 있으므로 텍스트 없이 이미지+링크만
+      await navigator.share({files:[file], url:url});
     } else if(navigator.share){
       await navigator.share({title:'가디의 방어전', text:txt, url:url});
     } else {
