@@ -34,7 +34,9 @@
   .panel{background:rgba(10,17,64,.55);backdrop-filter:blur(6px);border:1.5px solid rgba(91,141,239,.5);
     border-radius:14px;padding:8px 14px;}
   .label{font-size:11px;opacity:.7;letter-spacing:.5px;}
-  .val{font-size:22px;font-weight:800;line-height:1.1;}
+  .val{font-size:22px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums;}
+  @keyframes scoreBump{0%{transform:scale(1)}35%{transform:scale(1.28);color:#FFD24A}100%{transform:scale(1)}}
+  #score.bump{animation:scoreBump .32s cubic-bezier(.34,1.56,.64,1);}
   .val small{font-size:13px;font-weight:600;opacity:.8;}
   #combo{position:absolute;left:50%;top:74px;transform:translateX(-50%);font-weight:900;
     font-size:30px;color:#FFD24A;text-shadow:0 2px 10px rgba(0,0,0,.5);opacity:0;transition:opacity .15s;}
@@ -265,6 +267,7 @@ const G = {
   shake:0, guardiHit:0, guardiPose:0, // 0 idle,1 shield,2 greet
   fever:0, heartbeat:0, lowWarned:false,
   items:[], freeze:0, lookA:0, lookT:0,
+  hitstop:0, dispScore:0, // 히트스톱(타격 정지) · 점수 카운트업 표시값
   t:0
 };
 
@@ -365,11 +368,19 @@ function kill(g){
   let pts = Math.round(t.score*mult);
   if(G.fever>0) pts*=2; // 피버 2배
   G.score += pts; G.kills++;
+  // ---- 타격감: 히트스톱 + 파편 + 충격파 + 플래시 + 화면 흔들림 ----
+  const boom = g.type==='boss'?1.8 : g.type==='tank'?1.3 : 1;
+  G.hitstop = Math.max(G.hitstop, (g.type==='boss'?0.09 : g.type==='tank'?0.06 : 0.035) + Math.min(G.combo,6)*0.004);
+  G.shake = Math.max(G.shake, (g.type==='boss'?14 : g.type==='tank'?7 : 4) + Math.min(G.combo,8)*0.5);
+  flash(g.x,g.y,g.r*boom);
+  shockwave(g.x,g.y,t.color,g.r*boom);
+  burstShards(g.x,g.y,t.color, Math.round((g.type==='boss'?26:12)*boom));
   burst(g.x,g.y,t.color, g.type==='boss'?40:18);
   burst(g.x,g.y,'#fff', 8);
   G.particles.push({face:true,x:g.x,y:g.y,r:Math.max(10,g.r*0.75),life:.35,max:.35,color:t.dark});
   G.lookA=Math.atan2(g.y-CY,g.x-CX); G.lookT=0.5; // 가디가 그쪽을 봄
   showFloater(g.x,g.y,'+'+pts, G.fever>0?'#FFEB99':'#FFD24A');
+  pulseScore();
   if(g.type==='boss'){ SFX.bosskill(); buzz([40,40,80]); }
   else { SFX.pop(); buzz(10); }
   if(G.combo>=3){
@@ -387,7 +398,7 @@ function kill(g){
     showFloater(CX,CY-R-56,'🔥 FEVER TIME! 점수 2배','#FFD24A');
     burst(g.x,g.y,'#FFD24A',30);
   }
-  if(g.type==='boss'){ G.shake=14; showFloater(CX,CY-R-30,'보스 격파! 🎉','#FFD24A'); }
+  if(g.type==='boss'){ G.shake=Math.max(G.shake,14); showFloater(CX,CY-R-30,'보스 격파! 🎉','#FFD24A'); }
   if(g.type==='split'){ // 분열!
     for(const s of [-1,1]){
       G.germs.push(makeGerm(g.x+s*26, g.y+rand(-12,12), 'mini', 1, scaledSpeed('mini')));
@@ -459,7 +470,27 @@ function burst(x,y,color,n){
 }
 function spark(x,y,color,n){ burst(x,y,color,n); }
 function ripple(x,y){ G.particles.push({ring:true,x,y,r:6,vr:260,life:.35,max:.35,color:'#5B8DEF'}); }
+// 처치 연출용 — 회전하며 튀는 파편 조각(폭발감)
+function burstShards(x,y,color,n){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, s=rand(90,280);
+    G.particles.push({shard:true,x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+      life:rand(.32,.55),max:.55,color,r:rand(4,9),rot:rand(0,6.28),vr:rand(-16,16)});
+  }
+}
+// 처치 연출용 — 굵고 밝은 충격파 링
+function shockwave(x,y,color,size){
+  G.particles.push({ring:true,x,y,r:size*0.25,vr:size*6.5,life:.26,max:.26,color,lw:6});
+}
+// 처치 연출용 — 순간 번쩍이는 플래시
+function flash(x,y,r){
+  G.particles.push({x,y,vx:0,vy:0,life:.1,max:.1,color:'#fff',r:r*1.15,flash:true});
+}
 function showFloater(x,y,text,color){ G.floaters.push({x,y,text,color,life:1,max:1,vy:-34}); }
+function pulseScore(){ // 점수 획득 시 짧게 통통 튀는 펄스
+  const el=document.getElementById('score');
+  el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+}
 function drawItems(){
   for(const it of G.items){
     if(it.ttl<1.5 && Math.floor(G.t*8)%2===0) continue; // 사라지기 직전 깜빡임
@@ -485,6 +516,8 @@ function loop(now){
 }
 
 function update(dt){
+  // 히트스톱 — 타격 직후 아주 짧게 정지해 타격감을 강조(연출은 그대로 그려짐)
+  if(G.hitstop>0){ G.hitstop=Math.max(0,G.hitstop-dt); return; }
   // 콤보 타이머
   if(G.comboTimer>0){ G.comboTimer-=dt; if(G.comboTimer<=0) G.combo=0; }
   // 피버 타이머
@@ -593,15 +626,24 @@ function update(dt){
   for(const p of G.particles){
     p.life-=dt;
     if(p.ring){ p.r += p.vr*dt; }
-    else if(p.face){ /* 제자리에서 사라지는 표정 */ }
-    else { p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.92; p.vy*=0.92; p.vy+=140*dt; }
+    else if(p.face || p.flash){ /* 제자리에서 사라지는 표정/플래시 */ }
+    else {
+      p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.92; p.vy*=0.92; p.vy+=140*dt*(p.shard?1.5:1);
+      if(p.shard) p.rot=(p.rot||0)+p.vr*dt;
+    }
   }
   G.particles=G.particles.filter(p=>p.life>0);
   for(const f of G.floaters){ f.life-=dt; f.y+=f.vy*dt; }
   G.floaters=G.floaters.filter(f=>f.life>0);
 
+  // 점수 카운트업(따르르륵) — 실제 점수를 향해 빠르게 굴러 올라감
+  if(G.dispScore<G.score){
+    const diff=G.score-G.dispScore;
+    G.dispScore = diff<=2 ? G.score : G.dispScore+Math.max(1,Math.ceil(diff*0.22));
+  } else G.dispScore=G.score;
+
   // HUD
-  document.getElementById('score').textContent = G.score.toLocaleString();
+  document.getElementById('score').textContent = Math.round(G.dispScore).toLocaleString();
   document.getElementById('wave').textContent = G.wave;
   document.getElementById('hpfill').style.width = (G.hp/G.maxHp*100)+'%';
   const f=document.getElementById('hpfill');
@@ -977,8 +1019,16 @@ function drawParticles(){
   for(const p of G.particles){
     const a=Math.max(0,p.life/p.max);
     if(p.ring){
-      ctx.globalAlpha=a*0.6;ctx.strokeStyle=p.color;ctx.lineWidth=3;
+      ctx.globalAlpha=a*(p.lw?0.8:0.6);ctx.strokeStyle=p.color;ctx.lineWidth=p.lw||3;
       ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.stroke();
+    } else if(p.flash){ // 처치 순간 번쩍이는 플래시
+      ctx.globalAlpha=a*0.9;ctx.fillStyle=p.color;
+      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.fill();
+    } else if(p.shard){ // 회전하며 튀는 파편
+      ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot||0);ctx.globalAlpha=a;
+      ctx.beginPath();ctx.moveTo(0,-p.r);ctx.lineTo(p.r*0.85,p.r*0.7);ctx.lineTo(-p.r*0.85,p.r*0.7);ctx.closePath();
+      ctx.fillStyle=p.color;ctx.fill();
+      ctx.restore();
     } else if(p.face){ // 처치 순간 X눈 표정이 커지며 사라짐
       const fr=p.r*(1+(1-a)*0.6);
       ctx.save();ctx.translate(p.x,p.y);ctx.globalAlpha=a*0.85;
@@ -1000,11 +1050,16 @@ function drawParticles(){
 function drawFloaters(){
   ctx.textAlign='center';ctx.font='800 20px sans-serif';
   for(const f of G.floaters){
+    const age=1-f.life/f.max;
+    const pop = age<0.18 ? 1+(0.18-age)/0.18*0.55 : 1; // 등장 시 팝!
     const a=Math.max(0,f.life/f.max);
+    ctx.save();
+    ctx.translate(f.x,f.y); ctx.scale(pop,pop);
     ctx.globalAlpha=a;
     ctx.lineWidth=4;ctx.strokeStyle='rgba(10,17,64,.6)';
-    ctx.strokeText(f.text,f.x,f.y);
-    ctx.fillStyle=f.color;ctx.fillText(f.text,f.x,f.y);
+    ctx.strokeText(f.text,0,0);
+    ctx.fillStyle=f.color;ctx.fillText(f.text,0,0);
+    ctx.restore();
   }
   ctx.globalAlpha=1;
 }
@@ -1024,7 +1079,7 @@ function startGame(){
   const st=getStats(); st.plays++; setStats(st); // 새 게임 1회 카운트
   Object.assign(G,{state:'play',score:0,wave:0,hp:100,kills:0,combo:0,comboTimer:0,
     germs:[],particles:[],floaters:[],shake:0,guardiHit:0,guardiPose:0,
-    waveActive:false,breakTimer:0.5,saveTimer:1.5});
+    waveActive:false,breakTimer:0.5,saveTimer:1.5,dispScore:0,hitstop:0});
   enterPlay();
 }
 function continueGame(){
@@ -1032,7 +1087,7 @@ function continueGame(){
   if(!s) return startGame();
   Object.assign(G,{state:'play',score:s.score,wave:Math.max(0,s.wave-1),hp:s.hp,kills:s.kills,
     combo:0,comboTimer:0,germs:[],particles:[],floaters:[],shake:0,guardiHit:0,
-    guardiPose:0,waveActive:false,breakTimer:0.7,saveTimer:1.5});
+    guardiPose:0,waveActive:false,breakTimer:0.7,saveTimer:1.5,dispScore:0,hitstop:0});
   enterPlay();
   showFloater(CX,CY-R-30,'이어서 시작! WAVE '+s.wave,'#5B8DEF');
 }
